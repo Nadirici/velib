@@ -1,0 +1,1118 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vélib' — état du réseau</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f9f9f7;
+      --surface: #fcfcfb;
+      --ink: #0b0b0b;
+      --ink-2: #52514e;
+      --muted: #898781;
+      --border: rgba(11, 11, 11, 0.10);
+      --bikes-1: #86b6ef;
+      --bikes-2: #5598e7;
+      --bikes-3: #2a78d6;
+      --bikes-4: #184f95;
+      --docks-1: #7cc47c;
+      --docks-2: #4aae4a;
+      --docks-3: #189318;
+      --docks-4: #005e00;
+      --series-blue: #2a78d6;
+      --series-green: #008300;
+      --critical: #d03b3b;
+      --good: #0ca30c;
+      --warning: #fab219;
+      --closed: #898781;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #0d0d0d;
+        --surface: #1a1a19;
+        --ink: #ffffff;
+        --ink-2: #c3c2b7;
+        --muted: #898781;
+        --border: rgba(255, 255, 255, 0.10);
+        --series-blue: #3987e5;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- Bandeau ---------- */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 20px;
+    }
+
+    .brand h1 {
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    .freshness {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--ink-2);
+    }
+
+    .live {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      color: var(--good);
+    }
+
+    .live .beacon {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--good);
+      animation: beacon 2s ease-out infinite;
+    }
+
+    @keyframes beacon {
+      0% {
+        box-shadow: 0 0 0 0 rgba(12, 163, 12, .45);
+      }
+
+      70% {
+        box-shadow: 0 0 0 9px rgba(12, 163, 12, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(12, 163, 12, 0);
+      }
+    }
+
+    .live.stale {
+      color: var(--warning);
+    }
+
+    .live.stale .beacon {
+      background: var(--warning);
+      animation: none;
+    }
+
+    .live.off {
+      color: var(--critical);
+    }
+
+    .live.off .beacon {
+      background: var(--critical);
+      animation: none;
+    }
+
+    .stats {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .tile {
+      min-width: 76px;
+    }
+
+    .tile .value {
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 1.1;
+    }
+
+    .tile .label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .tile .sub {
+      font-size: 11px;
+      color: var(--ink-2);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+
+    .mode {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .mode button {
+      font: inherit;
+      font-size: 12.5px;
+      padding: 6px 12px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--ink-2);
+    }
+
+    .mode button.active {
+      background: var(--ink);
+      color: var(--surface);
+      font-weight: 600;
+    }
+
+    #search {
+      font: inherit;
+      font-size: 13px;
+      padding: 6px 10px;
+      width: 210px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    #search::placeholder {
+      color: var(--muted);
+    }
+
+    /* ---------- Panneau BI ---------- */
+    .panel-btn {
+      font: inherit;
+      font-size: 12.5px;
+      padding: 6px 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--ink-2);
+    }
+
+    .panel-btn.active {
+      background: var(--ink);
+      color: var(--surface);
+      font-weight: 600;
+    }
+
+    #panel {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px 14px;
+      display: none;
+    }
+
+    #panel.open {
+      display: block;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .tabs,
+    .gran {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tabs button,
+    .gran button {
+      font: inherit;
+      font-size: 11.5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink-2);
+    }
+
+    .tabs button.active,
+    .gran button.active {
+      background: var(--ink);
+      color: var(--surface);
+      border-color: var(--ink);
+      font-weight: 600;
+    }
+
+    .kpis {
+      display: flex;
+      gap: 22px;
+      flex-wrap: wrap;
+      margin: 4px 0 10px;
+    }
+
+    .panel-body {
+      display: flex;
+      gap: 22px;
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+
+    .chart-col {
+      flex: 1;
+      min-width: 280px;
+    }
+
+    .chart-title {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      font-size: 11.5px;
+      color: var(--ink-2);
+      margin-bottom: 2px;
+    }
+
+    .chart-legend .lswatch {
+      display: inline-block;
+      width: 12px;
+      height: 3px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: 3px;
+    }
+
+    .chart-box {
+      position: relative;
+    }
+
+    .chart-box svg {
+      display: block;
+      width: 100%;
+    }
+
+    .chart-tip {
+      position: absolute;
+      pointer-events: none;
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11.5px;
+      color: var(--ink);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
+      white-space: nowrap;
+      z-index: 10;
+    }
+
+    .toplist {
+      min-width: 230px;
+      max-width: 300px;
+      font-size: 12px;
+      color: var(--ink-2);
+    }
+
+    .toplist .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 2px 0;
+    }
+
+    .toplist .row b {
+      color: var(--ink);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty-note {
+      font-size: 12.5px;
+      color: var(--muted);
+      padding: 14px 0 4px;
+    }
+
+    /* ---------- Carte ---------- */
+    #map {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .legend {
+      background: var(--surface);
+      color: var(--ink-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 11.5px;
+      line-height: 1.7;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+    }
+
+    .legend .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: -1px;
+    }
+
+    .legend .title {
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+
+    /* ---------- Popup ---------- */
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-tip {
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .leaflet-popup-content {
+      margin: 12px 14px;
+      font: 13px/1.5 system-ui, sans-serif;
+    }
+
+    .popup h3 {
+      font-size: 14px;
+      margin-bottom: 1px;
+    }
+
+    .popup .code {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .popup table {
+      border-collapse: collapse;
+    }
+
+    .popup td {
+      padding: 1px 0;
+    }
+
+    .popup td:first-child {
+      color: var(--ink-2);
+      padding-right: 14px;
+    }
+
+    .popup td:last-child {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .popup .bar {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      margin: 8px 0 4px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .popup .bar i {
+      display: block;
+      height: 100%;
+    }
+
+    .popup .status {
+      margin-top: 6px;
+      font-size: 12px;
+    }
+
+    .popup .delta {
+      color: var(--muted);
+      font-size: 11.5px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="brand">
+      <h1>Vélib' — état du réseau</h1>
+      <div class="freshness">
+        <span class="live" id="liveBadge"><span class="beacon"></span><span id="liveLabel">CONNEXION…</span></span>
+        <span id="freshText"></span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="tile">
+        <div class="value" id="stBikes">–</div>
+        <div class="label">vélos disponibles</div>
+        <div class="sub" id="stBikesSub"></div>
+      </div>
+      <div class="tile">
+        <div class="value" id="stDocks">–</div>
+        <div class="label">bornettes libres</div>
+      </div>
+      <div class="tile">
+        <div class="value" id="stEmpty">–</div>
+        <div class="label">stations vides</div>
+      </div>
+      <div class="tile">
+        <div class="value" id="stFull">–</div>
+        <div class="label">stations pleines</div>
+      </div>
+      <div class="tile">
+        <div class="value" id="stClosed">–</div>
+        <div class="label">fermées</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <input id="search" list="stationNames" placeholder="Chercher une station…  ⏎">
+      <datalist id="stationNames"></datalist>
+      <div class="mode">
+        <button id="modeBikes" class="active">Trouver un vélo</button>
+        <button id="modeDocks">Rendre un vélo</button>
+      </div>
+      <button id="panelBtn" class="panel-btn">📊 Activité</button>
+    </div>
+  </header>
+
+  <section id="panel">
+    <div class="panel-head">
+      <div class="tabs">
+        <button id="tabLive" class="active">Aujourd'hui (direct)</button>
+        <button id="tabHist">Historique (archives)</button>
+      </div>
+      <div class="gran" id="granBtns">
+        <button data-step="60">1 min</button>
+        <button data-step="300" class="active">5 min</button>
+        <button data-step="900">15 min</button>
+        <button data-step="3600">1 h</button>
+      </div>
+    </div>
+
+    <div id="viewLive">
+      <div class="kpis">
+        <div class="tile">
+          <div class="value" id="kEvents">–</div>
+          <div class="label">événements aujourd'hui</div>
+        </div>
+        <div class="tile">
+          <div class="value" id="kTaken">–</div>
+          <div class="label">vélos pris</div>
+        </div>
+        <div class="tile">
+          <div class="value" id="kReturned">–</div>
+          <div class="label">vélos rendus</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-col">
+          <div class="chart-legend">
+            <span><span class="lswatch" style="background:var(--series-blue)"></span>Vélos pris</span>
+            <span><span class="lswatch" style="background:var(--series-green)"></span>Vélos rendus</span>
+          </div>
+          <div class="chart-box" id="liveChart"></div>
+        </div>
+        <div class="toplist">
+          <div class="chart-title">Stations les plus actives aujourd'hui</div>
+          <div id="topList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="viewHist" style="display:none">
+      <div class="panel-body">
+        <div class="chart-col">
+          <div class="chart-title">Événements par jour archivé</div>
+          <div class="chart-box" id="dailyChart"></div>
+        </div>
+        <div class="chart-col">
+          <div class="chart-legend">
+            <span><span class="lswatch" style="background:var(--series-blue)"></span>Vélos pris</span>
+            <span><span class="lswatch" style="background:var(--series-green)"></span>Vélos rendus</span>
+          </div>
+          <div class="chart-title">Profil horaire moyen (jour vs nuit)</div>
+          <div class="chart-box" id="profChart"></div>
+        </div>
+      </div>
+      <div class="empty-note" id="histEmpty" style="display:none">
+        Aucune archive Parquet pour l'instant — lance <code>uv run python -m velib.archiver</code>
+        après une journée de collecte, puis reviens ici.
+      </div>
+    </div>
+  </section>
+
+  <div id="map"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script>
+    "use strict";
+
+    /* ========== Constantes visuelles ========== */
+    const RAMPS = {
+      bikes: ["#86b6ef", "#5598e7", "#2a78d6", "#184f95"],
+      docks: ["#7cc47c", "#4aae4a", "#189318", "#005e00"],
+    };
+    const CRITIC = "#d03b3b";
+    const CLOSED = "#898781";
+
+    /* ========== Carte Leaflet ========== */
+    const map = L.map("map", { preferCanvas: true }).setView([48.859, 2.347], 12);
+    const dark = matchMedia("(prefers-color-scheme: dark)");
+    let tiles = null;
+
+    function setTiles() {
+      if (tiles) map.removeLayer(tiles);
+      const style = dark.matches ? "dark_all" : "light_all";
+      tiles = L.tileLayer(
+        `https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`,
+        { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>', maxZoom: 19 }
+      ).addTo(map);
+    }
+    setTiles();
+    if (dark.addEventListener) dark.addEventListener("change", setTiles);
+    else if (dark.addListener) dark.addListener(setTiles);
+
+    /* ========== État global ========== */
+    let mode = "bikes";
+    const markers = new Map();
+    let stations = new Map();
+    let lastTs = null, clockOffset = 0;
+    let connected = false;
+
+    /* ========== Encodage visuel ========== */
+    function isClosed(s) {
+      return !s.is_installed || (mode === "bikes" ? !s.is_renting : !s.is_returning);
+    }
+    function count(s) { return mode === "bikes" ? s.bikes_available : s.docks_available; }
+
+    function color(s) {
+      if (isClosed(s)) return CLOSED;
+      const n = count(s);
+      if (n === 0) return CRITIC;
+      const ratio = s.capacity > 0 ? n / s.capacity : 1;
+      const ramp = RAMPS[mode];
+      return ramp[Math.min(3, Math.floor(ratio * 4))];
+    }
+
+    function radius(s) {
+      return Math.max(5, Math.min(10, 4 + s.capacity / 12));
+    }
+
+    function style(s) {
+      return {
+        fillColor: color(s), fillOpacity: 0.85, radius: radius(s),
+        color: dark.matches ? "#1a1a19" : "#ffffff", weight: 1.5,
+      };
+    }
+
+    /* ========== Popup ========== */
+    function fmtAge(sec) {
+      if (sec < 60) return `${Math.max(0, Math.round(sec))} s`;
+      if (sec < 3600) return `${Math.round(sec / 60)} min`;
+      return `${Math.round(sec / 3600)} h`;
+    }
+
+    function popupHtml(id) {
+      const s = stations.get(id);
+      const now = Date.now() / 1000 + clockOffset;
+      const pctBikes = s.capacity ? (100 * s.bikes_available / s.capacity) : 0;
+      const status = !s.is_installed ? "⛔ Hors service"
+        : (!s.is_renting && !s.is_returning) ? "⛔ Fermée (ni location ni retour)"
+        : !s.is_renting ? "⚠️ Location suspendue"
+        : !s.is_returning ? "⚠️ Retour suspendu"
+        : "✅ En service";
+      const delta = s.bikes_delta > 0 ? `+${s.bikes_delta}` : `${s.bikes_delta || 0}`;
+      return `<div class="popup">
+    <h3>${s.name}</h3>
+    <div class="code">n° ${s.station_code}</div>
+    <table>
+      <tr><td>Vélos disponibles</td><td><b>${s.bikes_available}</b></td></tr>
+      <tr><td>&nbsp;&nbsp;dont mécaniques</td><td>${s.mechanical}</td></tr>
+      <tr><td>&nbsp;&nbsp;dont électriques</td><td>${s.ebike}</td></tr>
+      <tr><td>Bornettes libres</td><td><b>${s.docks_available}</b></td></tr>
+      <tr><td>Capacité</td><td>${s.capacity}</td></tr>
+    </table>
+    <div class="bar"><i style="width:${pctBikes}%;background:${RAMPS.bikes[2]}"></i></div>
+    <div class="status">${status}</div>
+    <div class="delta">Dernier changement : ${delta} vélo(s) · signalé il y a ${fmtAge(now - (s.last_reported || s.ts))}</div>
+  </div>`;
+    }
+
+    /* ========== Rendu des marqueurs ========== */
+    function ping(m, s) {
+      const base = radius(s);
+      const ghost = L.circleMarker(m.getLatLng(), {
+        radius: base, fill: false, color: color(s), weight: 2, opacity: 0.8,
+      }).addTo(map);
+      const t0 = performance.now();
+      (function step(t) {
+        const k = (t - t0) / 900;
+        if (k >= 1) { map.removeLayer(ghost); return; }
+        ghost.setStyle({ opacity: 0.8 * (1 - k) });
+        ghost.setRadius(base + 22 * k);
+        requestAnimationFrame(step);
+      })(t0);
+    }
+
+    function upsertMarker(id, s) {
+      let m = markers.get(id);
+      if (!m) {
+        m = L.circleMarker([s.lat, s.lon], style(s)).addTo(map);
+        m.bindPopup(() => popupHtml(id), { maxWidth: 280 });
+        markers.set(id, m);
+      } else {
+        m.setStyle(style(s));
+        if (m.isPopupOpen()) m.setPopupContent(popupHtml(id));
+      }
+      return m;
+    }
+
+    function restyleAll() {
+      for (const [id, s] of stations) upsertMarker(id, s);
+    }
+
+    /* ========== KPIs du bandeau ========== */
+    function renderStats() {
+      let bikes = 0, mech = 0, ebike = 0, docks = 0, empty = 0, full = 0, closed = 0;
+      for (const s of stations.values()) {
+        bikes += (s.bikes_available || 0);
+        mech += (s.mechanical || 0);
+        ebike += (s.ebike || 0);
+        docks += (s.docks_available || 0);
+        const open = s.is_installed && s.is_renting;
+        if (!open) closed++;
+        else if (s.bikes_available === 0) empty++;
+        if (s.is_installed && s.is_returning && s.docks_available === 0) full++;
+      }
+      const fmt = (n) => n.toLocaleString("fr-FR");
+      document.getElementById("stBikes").textContent = fmt(bikes);
+      document.getElementById("stBikesSub").textContent = `dont ${fmt(mech)} méca · ${fmt(ebike)} élec`;
+      document.getElementById("stDocks").textContent = fmt(docks);
+      document.getElementById("stEmpty").textContent = fmt(empty);
+      document.getElementById("stFull").textContent = fmt(full);
+      document.getElementById("stClosed").textContent = fmt(closed);
+    }
+
+    function renderSearchList() {
+      const dl = document.getElementById("stationNames");
+      dl.replaceChildren(...[...stations.values()].map((s) => {
+        const o = document.createElement("option");
+        o.value = s.name;
+        return o;
+      }));
+    }
+
+    /* ========== Légende ========== */
+    const legend = L.control({ position: "bottomleft" });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create("div", "legend");
+      legend._div = div;
+      renderLegend();
+      return div;
+    };
+
+    function renderLegend() {
+      if (!legend._div) return;
+      const ramp = RAMPS[mode];
+      const noun = mode === "bikes" ? "vélos" : "bornettes";
+      const sw = (c) => `<span class="swatch" style="background:${c}"></span>`;
+      legend._div.innerHTML = `
+    <div class="title">Remplissage (${noun})</div>
+    ${sw(CRITIC)}aucun ${mode === "bikes" ? "vélo" : "bornette libre"}<br>
+    ${sw(ramp[0])}jusqu'à 25 %<br>
+    ${sw(ramp[1])}25 – 50 %<br>
+    ${sw(ramp[2])}50 – 75 %<br>
+    ${sw(ramp[3])}plus de 75 %<br>
+    ${sw(CLOSED)}station fermée`;
+    }
+    legend.addTo(map);
+
+    /* ========== Badge de direct & fraîcheur ========== */
+    function renderLive() {
+      const badge = document.getElementById("liveBadge");
+      const label = document.getElementById("liveLabel");
+      const text = document.getElementById("freshText");
+      if (!connected) {
+        badge.className = "live off";
+        label.textContent = "CONNEXION…";
+        text.textContent = "";
+        return;
+      }
+      const age = lastTs == null ? null : Date.now() / 1000 + clockOffset - lastTs;
+      const stale = age != null && age > 180;
+      badge.className = stale ? "live stale" : "live";
+      label.textContent = stale ? "FLUX INTERROMPU" : "EN DIRECT";
+      text.textContent = age == null ? "" : `· dernier événement il y a ${fmtAge(age)}`;
+    }
+    setInterval(renderLive, 5000);
+
+    /* ========== Étage 1 : snapshot (Redis) ========== */
+    async function loadSnapshot() {
+      const payload = await (await fetch("/api/stations")).json();
+      clockOffset = payload.now - Date.now() / 1000;
+      lastTs = payload.last_ts;
+      stations = new Map(payload.stations.map((s) => [s.station_id, s]));
+      restyleAll();
+      renderStats();
+      renderSearchList();
+      renderLive();
+    }
+
+    /* ========== Étage 2 : flux SSE ========== */
+    let everConnected = false;
+
+    function applyEvent(s) {
+      stations.set(s.station_id, s);
+      lastTs = s.ts;
+      const m = upsertMarker(s.station_id, s);
+      ping(m, s);
+      renderStats();
+      renderLive();
+      bumpActivity(s);
+    }
+
+    function connectStream() {
+      const es = new EventSource("/api/stream");
+      es.onopen = async () => {
+        connected = true;
+        if (everConnected) await loadSnapshot();
+        everConnected = true;
+        renderLive();
+      };
+      es.onerror = () => {
+        connected = false;
+        renderLive();
+      };
+      es.onmessage = (e) => applyEvent(JSON.parse(e.data));
+    }
+
+    loadSnapshot().then(connectStream);
+
+    /* ================== Panneau BI ================== */
+    let panelOpen = false, biTab = "live", step = 300;
+    let actPoints = new Map();
+    let dayStart = null;
+    let kpi = { events: 0, taken: 0, returned: 0 };
+
+    const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const fmtN = (n) => n.toLocaleString("fr-FR");
+    const hhmm = (t) => new Date(t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+    async function loadActivity() {
+      const r = await (await fetch(`/api/activity?step=${step}`)).json();
+      dayStart = r.day_start;
+      actPoints = new Map(r.points.map((p) => [p.t, p]));
+      kpi = { events: 0, taken: 0, returned: 0 };
+      for (const p of r.points) {
+        kpi.events += p.events;
+        kpi.taken += p.taken;
+        kpi.returned += p.returned;
+      }
+      renderKpis();
+      renderTop(r.top);
+      renderLiveChart();
+    }
+
+    function renderKpis() {
+      document.getElementById("kEvents").textContent = fmtN(kpi.events);
+      document.getElementById("kTaken").textContent = fmtN(kpi.taken);
+      document.getElementById("kReturned").textContent = fmtN(kpi.returned);
+    }
+
+    function renderTop(top) {
+      document.getElementById("topList").innerHTML = top.length
+        ? top.map((s) => `<div class="row"><span>${s.name}</span><b>${fmtN(s.moves)}</b></div>`).join("")
+        : `<div class="empty-note">Pas encore de mouvement aujourd'hui.</div>`;
+    }
+
+    function bumpActivity(s) {
+      if (dayStart == null) return;
+      const t = Math.floor(s.ts / step) * step;
+      const p = actPoints.get(t) || { t: t, events: 0, taken: 0, returned: 0 };
+      p.events++; kpi.events++;
+      if (s.bikes_delta < 0) { p.taken += -s.bikes_delta; kpi.taken += -s.bikes_delta; }
+      else if (s.bikes_delta > 0) { p.returned += s.bikes_delta; kpi.returned += s.bikes_delta; }
+      actPoints.set(t, p);
+      if (panelOpen && biTab === "live") { renderKpis(); scheduleLiveChart(); }
+    }
+
+    let liveChartTimer = null;
+    function scheduleLiveChart() {
+      if (liveChartTimer) return;
+      liveChartTimer = setTimeout(function () { liveChartTimer = null; renderLiveChart(); }, 400);
+    }
+
+    /* ========== Utilitaires graphiques ========== */
+    function niceCeil(v) {
+      if (v <= 0) return 10;
+      const p = Math.pow(10, Math.floor(Math.log10(v)));
+      for (var i = 0; i < 4; i++) {
+        var m = [1, 2, 5, 10][i];
+        if (m * p >= v) return m * p;
+      }
+      return 10 * p;
+    }
+
+    function drawLineChart(box, xs, series, fmtX) {
+      var n = xs.length;
+      if (!n) { box.innerHTML = ""; return; }
+      var W = Math.max(box.clientWidth || 0, 320), H = 170;
+      var P = { l: 42, r: 14, t: 10, b: 22 };
+      var iw = W - P.l - P.r, ih = H - P.t - P.b;
+      var ymax = niceCeil(Math.max(5, ...series.flatMap(function (s) { return s.values; })));
+      var X = function (i) { return P.l + (n < 2 ? iw / 2 : (i / (n - 1)) * iw); };
+      var Y = function (v) { return P.t + ih - (v / ymax) * ih; };
+      var muted = cssVar("--muted"), gridc = cssVar("--border");
+
+      var g = "";
+      [0, 0.5, 1].forEach(function (f) {
+        var yy = Y(ymax * f);
+        g += '<line x1="' + P.l + '" y1="' + yy + '" x2="' + (W - P.r) + '" y2="' + yy + '" stroke="' + gridc + '"/>';
+        g += '<text x="' + (P.l - 6) + '" y="' + (yy + 3) + '" text-anchor="end" font-size="10" fill="' + muted + '">' + fmtN(Math.round(ymax * f)) + '</text>';
+      });
+      var nt = Math.min(6, n);
+      for (var k = 0; k < nt; k++) {
+        var i = Math.round((k / Math.max(nt - 1, 1)) * (n - 1));
+        g += '<text x="' + X(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="10" fill="' + muted + '">' + fmtX(xs[i]) + '</text>';
+      }
+      var paths = series.map(function (s) {
+        return '<path d="M' + s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join("L") + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      }).join("");
+
+      box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '">' + g + paths +
+        '<line class="ch" x1="0" y1="' + P.t + '" x2="0" y2="' + (P.t + ih) + '" stroke="' + muted + '" visibility="hidden"/>' +
+        '<rect x="' + P.l + '" y="' + P.t + '" width="' + iw + '" height="' + ih + '" fill="transparent"/>' +
+        '</svg><div class="chart-tip"></div>';
+
+      var svg = box.querySelector("svg");
+      var tip = box.querySelector(".chart-tip");
+      var ch = box.querySelector(".ch");
+      svg.addEventListener("mousemove", function (e) {
+        var r = svg.getBoundingClientRect();
+        var mx = ((e.clientX - r.left) / r.width) * W;
+        var idx = Math.max(0, Math.min(n - 1, Math.round(((mx - P.l) / iw) * (n - 1))));
+        ch.setAttribute("x1", X(idx));
+        ch.setAttribute("x2", X(idx));
+        ch.setAttribute("visibility", "visible");
+        tip.style.display = "block";
+        tip.innerHTML = '<b>' + fmtX(xs[idx]) + '</b>' + series.map(function (s) { return '<br>' + s.name + ' : ' + fmtN(s.values[idx]); }).join("");
+        var bx = box.getBoundingClientRect();
+        tip.style.left = Math.min(e.clientX - bx.left + 14, bx.width - tip.offsetWidth - 4) + "px";
+        tip.style.top = "6px";
+      });
+      svg.addEventListener("mouseleave", function () {
+        tip.style.display = "none";
+        ch.setAttribute("visibility", "hidden");
+      });
+    }
+
+    function drawBarChart(box, items) {
+      var n = items.length;
+      if (!n) { box.innerHTML = ""; return; }
+      var W = Math.max(box.clientWidth || 0, 320), H = 170;
+      var P = { l: 42, r: 14, t: 10, b: 22 };
+      var iw = W - P.l - P.r, ih = H - P.t - P.b;
+      var ymax = niceCeil(Math.max(5, ...items.map(function (d) { return d.value; })));
+      var bw = Math.min(40, (iw / n) * 0.72);
+      var Xc = function (i) { return P.l + ((i + 0.5) / n) * iw; };
+      var Y = function (v) { return P.t + ih - (v / ymax) * ih; };
+      var muted = cssVar("--muted"), gridc = cssVar("--border"), blue = cssVar("--series-blue");
+
+      var g = "";
+      [0, 0.5, 1].forEach(function (f) {
+        var yy = Y(ymax * f);
+        g += '<line x1="' + P.l + '" y1="' + yy + '" x2="' + (W - P.r) + '" y2="' + yy + '" stroke="' + gridc + '"/>';
+        g += '<text x="' + (P.l - 6) + '" y="' + (yy + 3) + '" text-anchor="end" font-size="10" fill="' + muted + '">' + fmtN(Math.round(ymax * f)) + '</text>';
+      });
+      var bars = items.map(function (d, i) {
+        return '<rect x="' + (Xc(i) - bw / 2).toFixed(1) + '" y="' + Y(d.value).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (ih - (Y(d.value) - P.t)).toFixed(1) + '" rx="3" fill="' + blue + '"/>';
+      }).join("");
+      var labels = items.map(function (d, i) {
+        if (n <= 12 || i % Math.ceil(n / 12) === 0) {
+          return '<text x="' + Xc(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="10" fill="' + muted + '">' + d.label + '</text>';
+        }
+        return "";
+      }).join("");
+
+      box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '">' + g + bars + labels +
+        '<rect x="' + P.l + '" y="' + P.t + '" width="' + iw + '" height="' + ih + '" fill="transparent"/>' +
+        '</svg><div class="chart-tip"></div>';
+
+      var svg = box.querySelector("svg");
+      var tip = box.querySelector(".chart-tip");
+      svg.addEventListener("mousemove", function (e) {
+        var r = svg.getBoundingClientRect();
+        var mx = ((e.clientX - r.left) / r.width) * W;
+        var idx = Math.max(0, Math.min(n - 1, Math.floor(((mx - P.l) / iw) * n)));
+        tip.style.display = "block";
+        tip.innerHTML = items[idx].tip;
+        var bx = box.getBoundingClientRect();
+        tip.style.left = Math.min(e.clientX - bx.left + 14, bx.width - tip.offsetWidth - 4) + "px";
+        tip.style.top = "6px";
+      });
+      svg.addEventListener("mouseleave", function () {
+        tip.style.display = "none";
+      });
+    }
+
+    function renderLiveChart() {
+      if (biTab !== "live" || dayStart == null) return;
+      var now = Math.floor(Date.now() / 1000 + clockOffset);
+      var xs = [], taken = [], returned = [];
+      for (var t = dayStart; t <= now; t += step) {
+        xs.push(t);
+        var p = actPoints.get(t);
+        taken.push(p ? p.taken : 0);
+        returned.push(p ? p.returned : 0);
+      }
+      drawLineChart(document.getElementById("liveChart"), xs, [
+        { name: "Vélos pris", color: cssVar("--series-blue"), values: taken },
+        { name: "Vélos rendus", color: cssVar("--series-green"), values: returned },
+      ], hhmm);
+    }
+
+    async function loadHistory() {
+      try {
+        var r1 = await fetch("/api/history/daily");
+        var r2 = await fetch("/api/history/profile");
+        var daily = await r1.json();
+        var prof = await r2.json();
+      } catch (err) {
+        document.getElementById("histEmpty").style.display = "block";
+        return;
+      }
+
+      if (!daily.days || daily.days.length === 0) {
+        document.getElementById("histEmpty").style.display = "block";
+        var pb = document.querySelector("#viewHist .panel-body");
+        if (pb) pb.style.display = "none";
+        return;
+      }
+      document.getElementById("histEmpty").style.display = "none";
+      var pb2 = document.querySelector("#viewHist .panel-body");
+      if (pb2) pb2.style.display = "flex";
+
+      drawBarChart(document.getElementById("dailyChart"), daily.days.map(function (d) {
+        return {
+          label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7),
+          value: d.events,
+          tip: '<b>' + d.date + '</b><br>' + fmtN(d.events) + ' mvts<br>' + fmtN(d.taken) + ' pris · ' + fmtN(d.returned) + ' rendus',
+        };
+      }));
+
+      drawLineChart(document.getElementById("profChart"),
+        prof.hours.map(function (h) { return h.hour; }), [
+          { name: "Vélos pris", color: cssVar("--series-blue"), values: prof.hours.map(function (h) { return h.taken; }) },
+          { name: "Vélos rendus", color: cssVar("--series-green"), values: prof.hours.map(function (h) { return h.returned; }) },
+        ], function (h) { return h + " h"; });
+    }
+
+    /* ========== Interactions DOM ========== */
+    var panelEl = document.getElementById("panel");
+
+    document.getElementById("panelBtn").addEventListener("click", function () {
+      panelOpen = !panelOpen;
+      panelEl.classList.toggle("open", panelOpen);
+      document.getElementById("panelBtn").classList.toggle("active", panelOpen);
+      setTimeout(function () { map.invalidateSize(); }, 600);
+      if (panelOpen) {
+        if (biTab === "live") loadActivity(); else loadHistory();
+      }
+    });
+
+    function setBiTab(next) {
+      biTab = next;
+      document.getElementById("tabLive").classList.toggle("active", biTab === "live");
+      document.getElementById("tabHist").classList.toggle("active", biTab === "hist");
+      document.getElementById("viewLive").style.display = biTab === "live" ? "block" : "none";
+      document.getElementById("viewHist").style.display = biTab === "hist" ? "block" : "none";
+      document.getElementById("granBtns").style.display = biTab === "live" ? "flex" : "none";
+      if (biTab === "live") loadActivity(); else loadHistory();
+    }
+
+    document.getElementById("tabLive").addEventListener("click", function () { setBiTab("live"); });
+    document.getElementById("tabHist").addEventListener("click", function () { setBiTab("hist"); });
+
+    var granBtns = document.querySelectorAll("#granBtns button");
+    for (var gi = 0; gi < granBtns.length; gi++) {
+      (function (btn) {
+        btn.addEventListener("click", function () {
+          step = Number(btn.dataset.step);
+          for (var bi = 0; bi < granBtns.length; bi++) {
+            granBtns[bi].classList.toggle("active", granBtns[bi] === btn);
+          }
+          loadActivity();
+        });
+      })(granBtns[gi]);
+    }
+
+    var rsTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(rsTimer);
+      rsTimer = setTimeout(function () {
+        if (!panelOpen) return;
+        if (biTab === "live") renderLiveChart(); else loadHistory();
+      }, 200);
+    });
+
+    function setMode(next) {
+      mode = next;
+      document.getElementById("modeBikes").classList.toggle("active", mode === "bikes");
+      document.getElementById("modeDocks").classList.toggle("active", mode === "docks");
+      restyleAll();
+      renderLegend();
+    }
+
+    document.getElementById("modeBikes").addEventListener("click", function () { setMode("bikes"); });
+    document.getElementById("modeDocks").addEventListener("click", function () { setMode("docks"); });
+
+    document.getElementById("search").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      var q = e.target.value.trim().toLowerCase();
+      if (!q) return;
+      var hit = null;
+      for (var _s of stations.values()) {
+        if (_s.name.toLowerCase().includes(q)) { hit = _s; break; }
+      }
+      if (!hit) { e.target.value = ""; e.target.placeholder = "aucune station trouvée…"; return; }
+      map.flyTo([hit.lat, hit.lon], 16, { duration: 0.8 });
+      var mk = markers.get(hit.station_id);
+      if (mk) mk.openPopup();
+    });
+  </script>
+</body>
+</html>

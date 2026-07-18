@@ -122,8 +122,17 @@ def run(group_id=GROUP_ID,handler=handle_event) -> None:
             if msg.error():
                 print(f"Consumer error: {msg.error()}")
                 continue
-            event = parse_event(msg)
-            handler(event)
+            try:
+                event = parse_event(msg)
+                handler(event)
+            except Exception as e:
+                # Message « empoisonné » (malformé, champ null…) : on l'écarte
+                # au lieu de crasher — sinon, pas de commit, et Kafka nous
+                # resservirait le même message à l'infini en bloquant la
+                # partition. Version industrielle : le republier dans un topic
+                # dead-letter (velib.station.changes.dlq) pour analyse.
+                print(f"Message écarté (poison) partition={msg.partition()} "
+                      f"offset={msg.offset()}: {e!r}")
             consumer.commit(msg)
     except KeyboardInterrupt:
         print("Consumer interrupted by user.")

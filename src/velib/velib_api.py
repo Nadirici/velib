@@ -47,13 +47,16 @@ class VelibClient:
         info: dict[int, StationInfo] = {}
         for s in stations:
             sid = s["station_id"]
+            # `dict.get(clé, défaut)` ne remplace que la clé ABSENTE : si l'API
+            # renvoie `"stationCode": null`, get() rend None. Le `or` couvre
+            # les deux cas (clé absente ET valeur null).
             info[sid] = StationInfo(
                 station_id=sid,
-                station_code=s.get("stationCode", ""),
-                name=s.get("name", ""),
+                station_code=s.get("stationCode") or "",
+                name=s.get("name") or "",
                 lat=s["lat"],
                 lon=s["lon"],
-                capacity=s.get("capacity", 0),
+                capacity=s.get("capacity") or 0,
             )
         return info
 
@@ -79,6 +82,12 @@ class VelibClient:
             if meta is None:
                 continue
             mechanical, ebike = parse_bike_types(s.get("num_bikes_available_types"))
+            # Même blindage anti-null que fetch_information. Pour les vélos, on
+            # ne peut pas utiliser `or` (0 est une valeur légitime différente du
+            # fallback mechanical+ebike) : test explicite sur None.
+            bikes = s.get("num_bikes_available")
+            if bikes is None:
+                bikes = mechanical + ebike
             states.append(
                 StationState(
                     station_id=sid,
@@ -88,11 +97,11 @@ class VelibClient:
                     lon=meta.lon,
                     capacity=meta.capacity,
                     ts=ts,
-                    last_reported=s.get("last_reported", ts),
+                    last_reported=s.get("last_reported") or ts,
                     mechanical=mechanical,
                     ebike=ebike,
-                    bikes_available=s.get("num_bikes_available", mechanical + ebike),
-                    docks_available=s.get("num_docks_available", 0),
+                    bikes_available=bikes,
+                    docks_available=s.get("num_docks_available") or 0,
                     is_installed=bool(s.get("is_installed", 0)),
                     is_renting=bool(s.get("is_renting", 0)),
                     is_returning=bool(s.get("is_returning", 0)),
