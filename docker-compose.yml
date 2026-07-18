@@ -69,8 +69,38 @@ services:
       # kafka-ui est un conteneur → il passe par le listener INTERNAL.
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
 
-  # TODO (plus tard, étape state store) : ajouter un service `redis` ici,
-  # puis écrire RedisStateStore qui implémente PreviousStateStore.
+  redis:
+    # Redis : store clé-valeur EN MÉMOIRE (lectures/écritures < 1 ms). Son rôle
+    # ici : tenir la « photo » de l'état courant des stations, que le dashboard
+    # lira directement — par opposition à Kafka qui tient le « film » (le flux
+    # des changements). L'image alpine est minuscule (~30 Mo).
+    image: redis:7-alpine
+    container_name: velib-redis
+    ports:
+      # Exposé à ta machine pour ton consumer Python et redis-cli.
+      - "6379:6379"
+    # AOF (append-only file) : Redis journalise chaque écriture sur disque et
+    # peut donc restaurer son état au redémarrage. Sans ça, tout serait perdu
+    # à chaque restart — acceptable ici (on peut reconstruire depuis Kafka !)
+    # mais autant apprendre l'option de persistance standard.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+  redisinsight:
+    # UI officielle de Redis : browser de clés, éditeur, profiler de commandes.
+    # L'équivalent de kafka-ui, mais pour la photo : http://localhost:5540
+    image: redis/redisinsight:latest
+    container_name: velib-redisinsight
+    depends_on:
+      - redis
+    ports:
+      - "5540:5540"
+    volumes:
+      # Mémorise la connexion configurée dans l'UI entre deux redémarrages.
+      - redisinsight-data:/data
 
 volumes:
   kafka-data:
+  redis-data:
+  redisinsight-data:

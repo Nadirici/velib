@@ -7,6 +7,7 @@ dependencies = [
     "httpx",
     "truststore",
     "confluent-kafka",
+    "redis>=8.0.1",
 ]
 
 [dependency-groups]
