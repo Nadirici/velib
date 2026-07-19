@@ -53,9 +53,16 @@ HOURLY_VARS = [
 DATA_DIR = Path("data") / "weather"
 
 
-def fetch_day(day: date) -> list[tuple]:
-    """Les 24 relevés horaires du jour, prêts à insérer."""
-    with httpx.Client(timeout=15.0, verify=_SSL_CONTEXT) as client:
+def fetch_day(day: date, client: httpx.Client | None = None) -> list[tuple]:
+    """Les 24 relevés horaires du jour, prêts à insérer.
+
+    `client` injectable (même motif que VelibClient) : les tests passent un
+    client monté sur un transport simulé, sans toucher au réseau.
+    """
+    owns_client = client is None
+    if client is None:
+        client = httpx.Client(timeout=15.0, verify=_SSL_CONTEXT)
+    try:
         resp = client.get(API_URL, params={
             "latitude": LAT,
             "longitude": LON,
@@ -66,6 +73,9 @@ def fetch_day(day: date) -> list[tuple]:
         })
         resp.raise_for_status()
         hourly = resp.json()["hourly"]
+    finally:
+        if owns_client:
+            client.close()
 
     rows = []
     for i, iso in enumerate(hourly["time"]):
