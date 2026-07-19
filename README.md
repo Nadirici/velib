@@ -180,6 +180,11 @@ velib/
   les composants VM se mettent à jour à la main (`git pull` + `docker compose up -d`).
 - Airflow tourne en mode `standalone` (base SQLite) — suffisant pour le batch quotidien, à séparer
   (executor distribué + Postgres) pour un vrai environnement de production.
+
+- **Roadmap Data & Machine Learning** :
+  - Chargement PostgreSQL analytique.
+  - Croisement avec des données météo (les horodatages sont volontairement restés en epoch UTC pour ça).
+  - Entraînement d'un modèle de Machine Learning pour la prédiction de disponibilité par station.
 - **Roadmap IA & Agents (en cours de réflexion)** :
   - Intégration d'un LLM auto-hébergé (**Ollama**) sur la VM pour garantir la confidentialité des données métier.
   - Orchestration via **LangGraph** : création d'un Agent d'Exploitation capable d'interroger la base DuckDB (via du *Function Calling*) pour détecter les anomalies du réseau et générer des rapports d'alerte automatisés.
