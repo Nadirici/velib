@@ -1,0 +1,9 @@
+.gitignore
+.venv/
+.pytest_cache/
+__pycache__/
+data/
+.coverage
+.claude/
+# Documentation interne
+docs/ROADMAP-IA.md

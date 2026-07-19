@@ -104,8 +104,7 @@ velib/
 ├── dags/
 │   └── velib_daily.py           # DAG Airflow : archivage événements + météo (nuit)
 ├── docs/
-│   ├── DEPLOY-GCP.md            # Guide de déploiement GCP pas à pas
-│   └── ROADMAP-IA.md           # Pistes d'intégration IA/ML
+│   └── DEPLOY-GCP.md            # Guide de déploiement GCP pas à pas
 ├── data/                        # Données générées (Parquet, hors git) : events/ et weather/
 │   └── {events,weather}/date=YYYY-MM-DD/*.parquet
 ├── src/velib/
@@ -181,7 +180,7 @@ velib/
   les composants VM se mettent à jour à la main (`git pull` + `docker compose up -d`).
 - Airflow tourne en mode `standalone` (base SQLite) — suffisant pour le batch quotidien, à séparer
   (executor distribué + Postgres) pour un vrai environnement de production.
-- À venir (voir [docs/ROADMAP-IA.md](docs/ROADMAP-IA.md)) : chargement PostgreSQL analytique,
+- À venir : chargement PostgreSQL analytique,
   croisement météo (les horodatages sont volontairement restés en epoch UTC pour ça), prédiction de
   disponibilité par station, agent conversationnel LLM sur les données.
 
