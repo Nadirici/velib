@@ -1781,9 +1781,19 @@
         taken.push(p ? p.taken : 0);
         returned.push(p ? p.returned : 0);
       }
-      drawLineChart(document.getElementById("liveChart"), xs, [
-        { name: "Vélos pris", color: cssVar("--series-blue"), values: taken },
-        { name: "Vélos rendus", color: cssVar("--series-green"), values: returned },
+      // On ne trace que la plage où il y a effectivement de la donnée : on
+      // rogne les tranches vides en TÊTE (avant les premières données du jour —
+      // cas du cloud démarré en cours de journée : pas de longue ligne à 0
+      // depuis 00h00) et en QUEUE (le bucket courant à peine commencé, encore
+      // vide — évite la chute verticale à 0 au bord droit). Les creux INTERNES
+      // (la nuit, une vraie activité basse mais non nulle) sont conservés.
+      var first = 0, last = xs.length - 1;
+      while (first <= last && taken[first] === 0 && returned[first] === 0) first++;
+      while (last >= first && taken[last] === 0 && returned[last] === 0) last--;
+      if (first > last) { document.getElementById("liveChart").innerHTML = ""; return; }
+      drawLineChart(document.getElementById("liveChart"), xs.slice(first, last + 1), [
+        { name: "Vélos pris", color: cssVar("--series-blue"), values: taken.slice(first, last + 1) },
+        { name: "Vélos rendus", color: cssVar("--series-green"), values: returned.slice(first, last + 1) },
       ], hhmm);
     }
 
