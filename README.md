@@ -4,6 +4,10 @@
 
 Pipeline de données temps réel qui collecte l'état des ~1 500 stations Vélib' Métropole, détecte les changements (vélos pris/rendus), et les visualise sur un dashboard cartographique en direct.
 
+**🔗 Démo en ligne : https://velib-dashboard-564200084105.europe-west1.run.app**
+
+Déployé sur Google Cloud (VM GCE pour le cœur streaming, Cloud Run pour le dashboard), avec CI/CD automatique à chaque merge sur `main`.
+
 ## Architecture
 
 ```
@@ -38,14 +42,19 @@ Pipeline de données temps réel qui collecte l'état des ~1 500 stations Vélib
 
 | Composant | Technologie |
 |-----------|-------------|
-| Source de données | [API open data Vélib' Métropole](https://www.velib-metropole.fr/donnees-open-data-gbfs-702c02b3-ec5e-4db8-824f-13787e1e7dfd) |
+| Source de données | [API open data Vélib' Métropole](https://www.velib-metropole.fr/donnees-open-data-gbfs-702c02b3-ec5e-4db8-824f-13787e1e7dfd) (GBFS) |
 | Message broker | Apache Kafka 4.1 (mode KRaft, sans ZooKeeper) |
 | State store | Redis 7 (vue matérialisée de l'état courant) |
-| Backend API | FastAPI + Uvicorn |
-| Frontend | HTML/CSS/JS vanilla + Leaflet.js |
-| Archivage | Parquet (via DuckDB) |
-| Requêtes SQL | DuckDB (in-process, directement sur les fichiers Parquet) |
-| Gestion de projet | uv (packaging Python) |
+| Backend API | FastAPI + Uvicorn (+ SSE pour le push temps réel) |
+| Frontend | HTML/CSS/JS vanilla + Leaflet.js (graphiques SVG faits main) |
+| Archivage & requêtes | Parquet (partitionné par date) + DuckDB (SQL in-process) |
+| Ingestion météo | [Open-Meteo](https://open-meteo.com) → Parquet (pour le futur ML) |
+| Orchestration | Apache Airflow 3 (DAG batch quotidien) |
+| Conteneurisation | Docker (image unique multi-rôles) + Docker Compose |
+| Cloud | GCE (VM cœur streaming), Cloud Run (dashboard), Cloud Storage (Parquet) |
+| CI/CD | GitHub Actions + Workload Identity Federation (déploiement sans clé) |
+| Tests | pytest (couverture ≥ 90 % imposée), fakeredis, transports HTTP simulés |
+| Gestion de projet | uv (packaging & dépendances Python) |
 
 ## Prérequis
 
@@ -161,32 +170,39 @@ Guide complet pas à pas : [docs/DEPLOY-GCP.md](docs/DEPLOY-GCP.md).
 
 ```
 velib/
-├── docker-compose.yml          # Kafka (KRaft) + Redis + UI admin
-├── pyproject.toml              # Métadonnées projet & dépendances
-├── uv.lock                    # Lock file des dépendances
-├── data/                       # Données générées (Parquet)
-│   └── events/
-│       └── date=YYYY-MM-DD/
-│           └── events.parquet
+├── docker-compose.yml           # Infra locale : Kafka (KRaft) + Redis + Airflow + UIs
+├── docker-compose.prod.yml      # Overlay VM GCE : producer/consumer conteneurisés, envoi GCS
+├── Dockerfile                   # Image unique multi-rôles (build uv multi-couches)
+├── pyproject.toml               # Métadonnées projet & dépendances
+├── uv.lock                      # Lock des dépendances
+├── .github/workflows/ci.yml     # CI/CD : tests → build → Cloud Run (via WIF)
+├── dags/
+│   └── velib_daily.py           # DAG Airflow : archivage événements + météo (nuit)
+├── docs/
+│   ├── DEPLOY-GCP.md            # Guide de déploiement GCP pas à pas
+│   └── ROADMAP-IA.md           # Pistes d'intégration IA/ML
+├── data/                        # Données générées (Parquet, hors git) : events/ et weather/
+│   └── {events,weather}/date=YYYY-MM-DD/*.parquet
 ├── src/velib/
-│   ├── models.py               # Dataclasses : StationInfo, StationState, StationChangeEvent
-│   ├── velib_api.py            # Client HTTP de l'API open data Vélib'
-│   ├── producer.py             # Logique pure de détection de changements
-│   ├── state_store.py          # Store d'état précédent (en mémoire)
-│   ├── kafka_producer.py       # Boucle temps réel : API → Kafka
-│   ├── kafka_consumer.py       # Consumer moniteur (logs console)
-│   ├── redis_consumer.py       # Consumer Redis (vue matérialisée)
-│   ├── activity.py             # Agrégation en RAM (couche speed)
-│   ├── archiver.py             # Archivage Parquet (couche batch)
-│   ├── dashboard.py            # Backend FastAPI (SSE + API REST)
-│   └── static/
-│       └── dashboard.html      # Frontend (carte Leaflet + graphiques SVG)
-└── tests/
+│   ├── models.py                # Dataclasses : StationInfo, StationState, StationChangeEvent
+│   ├── velib_api.py             # Client HTTP de l'API open data Vélib' (GBFS)
+│   ├── producer.py              # Logique pure de détection de changements
+│   ├── state_store.py           # Store d'état précédent (Protocol + impl. en mémoire)
+│   ├── kafka_producer.py        # Boucle temps réel : API → Kafka
+│   ├── kafka_consumer.py        # Boucle de consommation générique (moniteur console)
+│   ├── redis_consumer.py        # Consumer Redis (vue matérialisée)
+│   ├── activity.py              # Agrégation en RAM du jour (couche speed)
+│   ├── archiver.py              # Archivage Parquet des événements (couche batch)
+│   ├── weather.py               # Ingestion météo Open-Meteo → Parquet
+│   ├── gcs.py                   # Envoi optionnel des Parquet vers un bucket GCS
+│   ├── dashboard.py             # Backend FastAPI (snapshot + SSE + API BI)
+│   └── static/dashboard.html    # Frontend (carte Leaflet + graphiques SVG)
+└── tests/                       # 90 %+ de couverture, sans infra réelle
     ├── conftest.py
-    ├── test_models.py
-    ├── test_producer.py
-    ├── test_state_store.py
-    └── test_velib_api.py
+    ├── test_models.py           test_producer.py        test_state_store.py
+    ├── test_velib_api.py        test_activity.py        test_kafka_producer.py
+    ├── test_kafka_consumer.py   test_redis_consumer.py  test_archiver.py
+    └── test_weather.py          test_gcs.py             test_dashboard.py
 ```
 
 ## Concepts clés
@@ -236,6 +252,11 @@ velib/
 - Le contrat de schéma est implicite (`to_json`/`parse_event`). Version industrielle : Avro + Schema
   Registry, et une dead letter queue à la place du log d'écartement.
 - L'agrégation d'activité n'est pas idempotente en cas de replay partiel (tolérable pour des tendances).
-- L'archiveur se lance à la main — à planifier (Planificateur de tâches Windows / cron).
-- À venir : fenêtres glissantes sur `bikes_delta`, croisement météo (les horodatages sont volontairement
-  restés en epoch UTC pour ça), prédiction de disponibilité par station.
+- La VM est un point unique de défaillance (single-node Kafka/Redis) — en production on passerait à
+  un cluster Kafka managé + Redis répliqué ; le déploiement ne met à jour que le dashboard (Cloud Run),
+  les composants VM se mettent à jour à la main (`git pull` + `docker compose up -d`).
+- Airflow tourne en mode `standalone` (base SQLite) — suffisant pour le batch quotidien, à séparer
+  (executor distribué + Postgres) pour un vrai environnement de production.
+- À venir (voir [docs/ROADMAP-IA.md](docs/ROADMAP-IA.md)) : chargement PostgreSQL analytique,
+  croisement météo (les horodatages sont volontairement restés en epoch UTC pour ça), prédiction de
+  disponibilité par station, agent conversationnel LLM sur les données.

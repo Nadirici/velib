@@ -1,6 +1,11 @@
 # Déploiement GCP — guide pas à pas
 
-Architecture cible (décidée le 2026-07-19) :
+> **✅ Déployé** — projet `velib-pipeline`, région `europe-west1`.
+> Dashboard live : https://velib-dashboard-564200084105.europe-west1.run.app
+> CI/CD active (merge sur `main` → déploiement Cloud Run automatique).
+> Ce guide reste la référence reproductible ; remplace `<toi>` et les noms par les tiens.
+
+Architecture cible :
 
 ```
                     ┌────────────── GCP ───────────────────────────────┐
