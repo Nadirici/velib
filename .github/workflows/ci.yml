@@ -1,4 +1,7 @@
-# CI/CD : tests à chaque push/PR, build + déploiement Cloud Run sur master.
+# CI/CD à deux environnements :
+#   - dev  : la branche de travail — chaque push y déclenche les tests ;
+#   - main : la production (celle qu'on montre) — on n'y arrive que par PR
+#     depuis dev ; un merge déclenche tests PUIS build + déploiement Cloud Run.
 #
 # Prérequis côté GitHub (voir docs/DEPLOY-GCP.md pour leur création) :
 #   secrets : GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_SA_EMAIL
@@ -11,8 +14,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [master]
+    branches: [main, dev]
   pull_request:
+    branches: [main]
 
 jobs:
   tests:
@@ -26,10 +30,10 @@ jobs:
         run: uv run pytest
 
   deploy:
-    # Uniquement sur master, et seulement si les tests passent : c'est la
-    # définition même du déploiement continu avec garde-fou.
+    # Uniquement sur main (la prod), et seulement si les tests passent :
+    # la définition même du déploiement continu avec garde-fou.
     needs: tests
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read

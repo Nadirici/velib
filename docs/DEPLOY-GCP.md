@@ -6,7 +6,7 @@ Architecture cible (décidée le 2026-07-19) :
                     ┌────────────── GCP ───────────────────────────────┐
                     │                                                  │
  GitHub ── Actions ─┼─► Artifact Registry ──► Cloud Run (dashboard)    │
- (push master)      │        (images)         │ lit Redis+Kafka via IP │
+ (merge → main)     │        (images)         │ lit Redis+Kafka via IP │
                     │                         │ interne, Parquet via   │
                     │                         │ volume GCS monté       │
                     │   VM GCE (e2-medium) ◄──┘                        │
@@ -32,7 +32,10 @@ avec `gcloud compute instances stop`.
 ## 0. Prérequis
 
 - Un compte GCP avec facturation (ou les crédits d'essai), le SDK `gcloud` installé.
-- Le repo poussé sur GitHub (`git remote add origin … && git push -u origin master`).
+- Le repo poussé sur GitHub (`git push -u origin main && git push -u origin dev`).
+- Flux à deux environnements : on travaille sur `dev`, on ouvre une PR `dev → main`,
+  le merge déploie. Protéger `main` sur GitHub (Settings → Branches → branch
+  protection : require PR + require status check « tests »).
 
 ```bash
 gcloud auth login
@@ -150,8 +153,8 @@ Côté GitHub (Settings → Secrets and variables → Actions) :
 | secret | `GCP_WIF_PROVIDER` | `projects/<num>/locations/global/workloadIdentityPools/github/providers/github-oidc` |
 | variable | `GCP_REGION` | `europe-west1` |
 
-Ensuite : chaque push sur `master` → tests (gate 90 %) → build → push →
-déploiement. Une PR ne déclenche que les tests.
+Ensuite : chaque merge sur `main` → tests (gate 90 %) → build → push →
+déploiement. Un push sur `dev` ou une PR ne déclenchent que les tests.
 
 ## 5. Exploitation
 
