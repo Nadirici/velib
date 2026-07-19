@@ -2188,7 +2188,8 @@
       var P = { l: 42, r: 14, t: 10, b: 22 };
       var iw = W - P.l - P.r, ih = H - P.t - P.b;
       var ymax = niceCeil(Math.max(5, ...vs.flatMap(function (s) { return s.values; })));
-      var X = function (i) { return P.l + (n < 2 ? iw / 2 : (i / (n - 1)) * iw); };
+      var xmin = vx[0], xmax = vx[n - 1];
+      var X = function (i) { return P.l + (xmin === xmax ? iw / 2 : ((vx[i] - xmin) / (xmax - xmin)) * iw); };
       var Y = function (v) { return P.t + ih - (v / ymax) * ih; };
       var muted = cssVar("--muted"), gridc = cssVar("--border");
 
