@@ -208,6 +208,139 @@
       color: var(--muted);
     }
 
+    /* ---------- Recherche (autocomplétion) ---------- */
+    .search-wrap {
+      position: relative;
+    }
+
+    .search-results {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      width: 300px;
+      max-height: 320px;
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+      z-index: 1200;
+      display: none;
+    }
+
+    .search-results.open {
+      display: block;
+    }
+
+    .search-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 10px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-item.active,
+    .search-item:hover {
+      background: var(--border);
+    }
+
+    .search-item .si-name {
+      font-size: 12.5px;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .search-item .si-arr {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .search-item .si-count {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-2);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .search-empty {
+      padding: 9px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ---------- Onglet Arrondissements ---------- */
+    .arr-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .arr-table th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      padding: 4px 10px 4px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .arr-table td {
+      padding: 5px 10px 5px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--ink-2);
+    }
+
+    .arr-table td:first-child {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .arr-table td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .arr-table tbody tr {
+      cursor: pointer;
+    }
+
+    .arr-table tbody tr:hover td {
+      background: var(--border);
+    }
+
+    .arr-fill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 120px;
+    }
+
+    .arr-fill .track {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .arr-fill .track i {
+      display: block;
+      height: 100%;
+      background: var(--bikes-3);
+    }
+
     /* ---------- Panneau BI ---------- */
     .panel-btn {
       font: inherit;
@@ -636,8 +769,10 @@
     </div>
 
     <div class="controls">
-      <input id="search" list="stationNames" placeholder="Chercher une station…  ⏎">
-      <datalist id="stationNames"></datalist>
+      <div class="search-wrap">
+        <input id="search" autocomplete="off" placeholder="Chercher une station…">
+        <div id="searchResults" class="search-results"></div>
+      </div>
       <div class="mode">
         <button id="modeBikes" class="active">Trouver un vélo</button>
         <button id="modeDocks">Rendre un vélo</button>
@@ -650,6 +785,7 @@
     <div class="panel-head">
       <div class="tabs">
         <button id="tabKpi" class="active">Indicateurs</button>
+        <button id="tabArr">Arrondissements</button>
         <button id="tabBiz">Métier</button>
         <button id="tabLive">Aujourd'hui (direct)</button>
         <button id="tabHist">Historique (archives)</button>
@@ -798,6 +934,22 @@
           <div id="bzSinks"></div>
           <div class="chart-title" style="margin-top:10px">Sources — elles se vident (flux net −)</div>
           <div id="bzSources"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="viewArr" style="display:none">
+      <div class="kgroup">Taux de remplissage par arrondissement (Paris intra-muros)</div>
+      <div class="chart-box" id="arrChart"></div>
+      <div class="panel-body" style="margin-top:12px">
+        <div class="chart-col" style="min-width:340px">
+          <div class="chart-title">Détail par arrondissement — clic sur une ligne = zoom sur la carte</div>
+          <table class="arr-table">
+            <thead>
+              <tr><th>Arr.</th><th>Stations</th><th>Vélos</th><th class="num">Élec</th><th>Remplissage</th><th class="num">Vides</th></tr>
+            </thead>
+            <tbody id="arrRows"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -952,7 +1104,13 @@
     }
 
     /* ========== Rendu des marqueurs ========== */
+    // On coupe les ondes radar pendant un déplacement de carte et au-delà d'un
+    // plafond de pings simultanés : c'est ce qui gardait le pan fluide même en
+    // pleine rafale d'événements.
+    let mapMoving = false, activePings = 0;
     function ping(m, s) {
+      if (mapMoving || activePings > 36) return;
+      activePings++;
       const base = radius(s);
       const ghost = L.circleMarker(m.getLatLng(), {
         radius: base, fill: false, color: color(s), weight: 2, opacity: 0.8,
@@ -960,12 +1118,14 @@
       const t0 = performance.now();
       (function step(t) {
         const k = (t - t0) / 900;
-        if (k >= 1) { map.removeLayer(ghost); return; }
+        if (k >= 1) { map.removeLayer(ghost); activePings--; return; }
         ghost.setStyle({ opacity: 0.8 * (1 - k) });
         ghost.setRadius(base + 22 * k);
         requestAnimationFrame(step);
       })(t0);
     }
+    map.on("movestart zoomstart", function () { mapMoving = true; });
+    map.on("moveend zoomend", function () { mapMoving = false; });
 
     function upsertMarker(id, s) {
       let m = markers.get(id);
@@ -1006,13 +1166,19 @@
       document.getElementById("stClosed").textContent = fmt(closed);
     }
 
-    function renderSearchList() {
-      const dl = document.getElementById("stationNames");
-      dl.replaceChildren(...[...stations.values()].map((s) => {
-        const o = document.createElement("option");
-        o.value = s.name;
-        return o;
-      }));
+    // Rafale d'événements (un tour de producer) : au lieu de relancer le
+    // travail O(n) par événement, on marque « à rafraîchir » et on flushe une
+    // seule fois à la prochaine frame — le pan reste fluide sous la charge.
+    let statsDirty = false;
+    function scheduleStats() {
+      if (statsDirty) return;
+      statsDirty = true;
+      requestAnimationFrame(function () {
+        statsDirty = false;
+        renderStats();
+        renderLive();
+        if (panelOpen && biTab === "arr") renderArrTab();
+      });
     }
 
     /* ========== Légende ========== */
@@ -1067,7 +1233,6 @@
       stations = new Map(payload.stations.map((s) => [s.station_id, s]));
       restyleAll();
       renderStats();
-      renderSearchList();
       renderLive();
     }
 
@@ -1077,11 +1242,10 @@
     function applyEvent(s) {
       stations.set(s.station_id, s);
       lastTs = s.ts;
-      const m = upsertMarker(s.station_id, s);
+      const m = upsertMarker(s.station_id, s);   // restyle du SEUL marqueur touché (cheap)
       ping(m, s);
-      renderStats();
-      renderLive();
       bumpActivity(s);
+      scheduleStats();   // travail O(n) coalescé : au plus une passe par frame d'affichage
     }
 
     function connectStream() {
@@ -1267,6 +1431,63 @@
       map.flyTo([Number(tr.dataset.lat), Number(tr.dataset.lon)], 16, { duration: 0.8 });
       const mk = markers.get(Number(tr.dataset.id));
       if (mk) mk.openPopup();
+    });
+
+    /* ================== Onglet Arrondissements ================== */
+    // L'arrondissement se lit dans le prefixe du station_code (ex. 16107 -> 16e).
+    // Verifie sur les donnees : 1..20 = Paris intra-muros, >=21 = banlieue.
+    function arrOf(s) {
+      const n = parseInt(s.station_code, 10);
+      const a = Math.floor(n / 1000);
+      return (a >= 1 && a <= 20) ? a : null;
+    }
+
+    function renderArrTab() {
+      if (biTab !== "arr") return;
+      const acc = new Map();
+      for (const s of stations.values()) {
+        const a = arrOf(s);
+        if (a == null) continue;   // banlieue : hors decoupage arrondissement
+        let o = acc.get(a);
+        if (!o) { o = { arr: a, n: 0, bikes: 0, ebike: 0, cap: 0, empty: 0 }; acc.set(a, o); }
+        o.n++;
+        o.bikes += s.bikes_available || 0;
+        o.ebike += s.ebike || 0;
+        o.cap += s.capacity || 0;
+        if (s.is_installed && s.is_renting && s.bikes_available === 0) o.empty++;
+      }
+      const rows = [...acc.values()].sort((x, y) => x.arr - y.arr);
+
+      drawBarChart(document.getElementById("arrChart"), rows.map(function (r) {
+        const f = r.cap ? Math.round(100 * r.bikes / r.cap) : 0;
+        return {
+          label: r.arr + "ᵉ",
+          value: f,
+          tip: "<b>" + r.arr + "ᵉ arrondissement</b><br>" + fmtN(r.bikes) + " vélos / " +
+            fmtN(r.cap) + " places<br>remplissage " + f + " %<br>" + r.empty + " station(s) vide(s)",
+        };
+      }));
+
+      document.getElementById("arrRows").innerHTML = rows.map(function (r) {
+        const fill = r.cap ? 100 * r.bikes / r.cap : 0;
+        return '<tr data-arr="' + r.arr + '">' +
+          '<td>' + r.arr + 'ᵉ</td>' +
+          '<td class="num">' + r.n + '</td>' +
+          '<td class="num">' + fmtN(r.bikes) + '</td>' +
+          '<td class="num">' + fmtN(r.ebike) + '</td>' +
+          '<td><div class="arr-fill"><div class="track"><i style="width:' + fill.toFixed(0) + '%"></i></div><span>' + fill.toFixed(0) + ' %</span></div></td>' +
+          '<td class="num">' + r.empty + '</td></tr>';
+      }).join("");
+    }
+
+    // Clic sur une ligne : zoom de la carte sur les stations de l'arrondissement.
+    document.getElementById("arrRows").addEventListener("click", function (e) {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const a = Number(tr.dataset.arr);
+      const pts = [];
+      for (const s of stations.values()) if (arrOf(s) === a) pts.push([s.lat, s.lon]);
+      if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.08));
     });
 
     /* ================== Onglet Indicateurs (KPIs) ================== */
@@ -1587,6 +1808,7 @@
 
     function loadBiTab() {
       if (biTab === "kpi") loadKpiTab();
+      else if (biTab === "arr") renderArrTab();
       else if (biTab === "biz") loadBizTab();
       else if (biTab === "live") loadActivity();
       else loadHistory();
@@ -1595,10 +1817,12 @@
     function setBiTab(next) {
       biTab = next;
       document.getElementById("tabKpi").classList.toggle("active", biTab === "kpi");
+      document.getElementById("tabArr").classList.toggle("active", biTab === "arr");
       document.getElementById("tabBiz").classList.toggle("active", biTab === "biz");
       document.getElementById("tabLive").classList.toggle("active", biTab === "live");
       document.getElementById("tabHist").classList.toggle("active", biTab === "hist");
       document.getElementById("viewKpi").style.display = biTab === "kpi" ? "block" : "none";
+      document.getElementById("viewArr").style.display = biTab === "arr" ? "block" : "none";
       document.getElementById("viewBiz").style.display = biTab === "biz" ? "block" : "none";
       document.getElementById("viewLive").style.display = biTab === "live" ? "block" : "none";
       document.getElementById("viewHist").style.display = biTab === "hist" ? "block" : "none";
@@ -1607,6 +1831,7 @@
     }
 
     document.getElementById("tabKpi").addEventListener("click", function () { setBiTab("kpi"); });
+    document.getElementById("tabArr").addEventListener("click", function () { setBiTab("arr"); });
     document.getElementById("tabBiz").addEventListener("click", function () { setBiTab("biz"); });
     document.getElementById("tabLive").addEventListener("click", function () { setBiTab("live"); });
     document.getElementById("tabHist").addEventListener("click", function () { setBiTab("hist"); });
@@ -1630,6 +1855,7 @@
       rsTimer = setTimeout(function () {
         if (!panelOpen) return;
         if (biTab === "kpi") renderKpiTab();
+        else if (biTab === "arr") renderArrTab();
         else if (biTab === "biz") renderBizTab();
         else if (biTab === "live") renderLiveChart();
         else loadHistory();
@@ -1647,18 +1873,79 @@
     document.getElementById("modeBikes").addEventListener("click", function () { setMode("bikes"); });
     document.getElementById("modeDocks").addEventListener("click", function () { setMode("docks"); });
 
-    document.getElementById("search").addEventListener("keydown", function (e) {
-      if (e.key !== "Enter") return;
-      var q = e.target.value.trim().toLowerCase();
-      if (!q) return;
-      var hit = null;
-      for (var _s of stations.values()) {
-        if (_s.name.toLowerCase().includes(q)) { hit = _s; break; }
-      }
-      if (!hit) { e.target.value = ""; e.target.placeholder = "aucune station trouvée…"; return; }
-      map.flyTo([hit.lat, hit.lon], 16, { duration: 0.8 });
-      var mk = markers.get(hit.station_id);
+    /* ========== Recherche (autocomplétion live) ========== */
+    const searchInput = document.getElementById("search");
+    const searchBox = document.getElementById("searchResults");
+    let searchMatches = [], searchActive = -1;
+    // insensible aux accents ET à la casse : "republique" trouve "République"
+    const norm = (s) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+    function closeSearch() {
+      searchBox.classList.remove("open");
+      searchBox.innerHTML = "";
+      searchMatches = []; searchActive = -1;
+    }
+
+    function goToStation(st) {
+      map.flyTo([st.lat, st.lon], 16, { duration: 0.8 });
+      const mk = markers.get(st.station_id);
       if (mk) mk.openPopup();
+      searchInput.value = st.name;
+      closeSearch();
+    }
+
+    function renderSearch() {
+      const q = norm(searchInput.value.trim());
+      if (q.length < 2) { closeSearch(); return; }
+      // priorité aux noms qui COMMENCENT par la requête, puis ceux qui la contiennent
+      const starts = [], has = [];
+      for (const st of stations.values()) {
+        const n = norm(st.name);
+        if (n.startsWith(q)) starts.push(st);
+        else if (n.includes(q)) has.push(st);
+      }
+      searchMatches = starts.concat(has).slice(0, 8);
+      searchActive = searchMatches.length ? 0 : -1;
+      if (!searchMatches.length) {
+        searchBox.innerHTML = '<div class="search-empty">Aucune station trouvée</div>';
+        searchBox.classList.add("open");
+        return;
+      }
+      const noun = mode === "bikes" ? "vélos" : "places";
+      searchBox.innerHTML = searchMatches.map(function (st, i) {
+        const a = arrOf(st);
+        const loc = a ? (a + "ᵉ arr.") : "banlieue";
+        const n = mode === "bikes" ? st.bikes_available : st.docks_available;
+        return '<div class="search-item' + (i === 0 ? " active" : "") + '" data-i="' + i + '">' +
+          '<span><span class="si-name">' + st.name + '</span><br><span class="si-arr">' + loc + '</span></span>' +
+          '<span class="si-count">' + n + " " + noun + '</span></div>';
+      }).join("");
+      searchBox.classList.add("open");
+    }
+
+    function moveSearch(d) {
+      if (!searchMatches.length) return;
+      searchActive = (searchActive + d + searchMatches.length) % searchMatches.length;
+      const items = searchBox.querySelectorAll(".search-item");
+      items.forEach(function (el, i) { el.classList.toggle("active", i === searchActive); });
+      if (items[searchActive]) items[searchActive].scrollIntoView({ block: "nearest" });
+    }
+
+    searchInput.addEventListener("input", renderSearch);
+    searchInput.addEventListener("focus", renderSearch);
+    searchInput.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); moveSearch(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); moveSearch(-1); }
+      else if (e.key === "Enter") { if (searchMatches[searchActive]) goToStation(searchMatches[searchActive]); }
+      else if (e.key === "Escape") { closeSearch(); searchInput.blur(); }
+    });
+    // mousedown (pas click) + preventDefault : sélectionne avant que le blur ferme la liste
+    searchBox.addEventListener("mousedown", function (e) {
+      const item = e.target.closest(".search-item");
+      if (item) { e.preventDefault(); goToStation(searchMatches[Number(item.dataset.i)]); }
+    });
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".search-wrap")) closeSearch();
     });
   </script>
 </body>
