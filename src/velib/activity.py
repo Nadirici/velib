@@ -55,6 +55,13 @@ class ActivityAggregator:
                 self._buckets.clear()
                 self._stations.clear()
                 self._day_start = local_midnight_epoch()
+            # Événement antérieur à minuit (bord de minuit, fuzz CDN, ou replay
+            # Kafka dont la donnée précède le début du jour) : il n'appartient
+            # pas à « aujourd'hui ». On l'ignore pour que `series` (fenêtre
+            # [minuit, now]) et `station_flows` (tout l'accumulé) comptent
+            # EXACTEMENT le même ensemble — sinon le reporting Métier surcompte.
+            if ts < self._day_start:
+                return
             b = self._buckets[ts // BASE_BUCKET_S * BASE_BUCKET_S]
             b[0] += 1
             delta = event.get("bikes_delta", 0)
