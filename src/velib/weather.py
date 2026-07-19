@@ -1,24 +1,12 @@
-"""Ingestion météo : archive la météo horaire de Paris en Parquet.
+"""Ingestion météo horaire de Paris → Parquet (Open-Meteo, gratuit, sans clé).
 
-Pourquoi c'est là dès maintenant : la pluie est le prédicteur n°1 de l'usage
-du vélo partagé. Le futur modèle de prédiction de disponibilité (voir
-docs/ROADMAP-IA.md) se joindra aux événements par l'heure — d'où le même
-partitionnement que l'archiveur d'événements :
+Même partitionnement que les événements (`data/weather/date=YYYY-MM-DD/`), pour
+permettre la jointure par l'heure (croisement météo, futur ML). Horaires
+demandés en UTC ; la colonne `hour` (heure locale) sert aux profils lisibles.
 
-    data/weather/date=YYYY-MM-DD/weather.parquet
-
-Source : Open-Meteo (https://open-meteo.com) — gratuit, sans clé d'API.
-L'endpoint forecast accepte start_date/end_date jusqu'à ~3 mois en arrière,
-ce qui couvre l'ingestion quotidienne ET le rattrapage de jours manqués.
-On demande les horaires en UTC : la jointure avec les événements se fait sur
-l'epoch, la colonne `hour` (heure LOCALE, comme dans events.parquet) sert aux
-profils lisibles par un humain.
-
-Usage :
-    uv run python -m velib.weather                          → hier
-    uv run python -m velib.weather 2026-07-18               → un jour précis
-    uv run python -m velib.weather 2026-07-18 2026-07-25    → une plage (backfill)
-    (à planifier chaque soir, à côté de l'archiveur d'événements)
+    python -m velib.weather                        # la veille
+    python -m velib.weather 2026-07-18             # un jour précis
+    python -m velib.weather 2026-07-18 2026-07-25  # une plage (backfill)
 """
 
 from __future__ import annotations
@@ -56,11 +44,7 @@ DATA_DIR = Path("data") / "weather"
 
 
 def fetch_day(day: date, client: httpx.Client | None = None) -> list[tuple]:
-    """Les 24 relevés horaires du jour, prêts à insérer.
-
-    `client` injectable (même motif que VelibClient) : les tests passent un
-    client monté sur un transport simulé, sans toucher au réseau.
-    """
+    """Les 24 relevés horaires du jour. `client` injectable pour les tests."""
     owns_client = client is None
     if client is None:
         client = httpx.Client(timeout=15.0, verify=_SSL_CONTEXT)

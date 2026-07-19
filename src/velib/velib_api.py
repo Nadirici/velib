@@ -47,9 +47,8 @@ class VelibClient:
         info: dict[int, StationInfo] = {}
         for s in stations:
             sid = s["station_id"]
-            # `dict.get(clé, défaut)` ne remplace que la clé ABSENTE : si l'API
-            # renvoie `"stationCode": null`, get() rend None. Le `or` couvre
-            # les deux cas (clé absente ET valeur null).
+            # `or` couvre à la fois la clé absente et la valeur null (que le
+            # défaut de dict.get, lui, ne remplacerait pas).
             info[sid] = StationInfo(
                 station_id=sid,
                 station_code=s.get("stationCode") or "",
@@ -82,9 +81,8 @@ class VelibClient:
             if meta is None:
                 continue
             mechanical, ebike = parse_bike_types(s.get("num_bikes_available_types"))
-            # Même blindage anti-null que fetch_information. Pour les vélos, on
-            # ne peut pas utiliser `or` (0 est une valeur légitime différente du
-            # fallback mechanical+ebike) : test explicite sur None.
+            # Test explicite sur None (pas `or`) : 0 est une valeur légitime,
+            # distincte du fallback mechanical + ebike.
             bikes = s.get("num_bikes_available")
             if bikes is None:
                 bikes = mechanical + ebike

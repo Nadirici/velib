@@ -4,9 +4,11 @@
 
 Pipeline de données temps réel qui collecte l'état des ~1 500 stations Vélib' Métropole, détecte les changements (vélos pris/rendus), et les visualise sur un dashboard cartographique en direct.
 
-**🔗 Démo en ligne : https://velib-dashboard-564200084105.europe-west1.run.app**
+## ▶ Démo en ligne
 
-Déployé sur Google Cloud (VM GCE pour le cœur streaming, Cloud Run pour le dashboard), avec CI/CD automatique à chaque merge sur `main`.
+**https://velib-dashboard-564200084105.europe-west1.run.app**
+
+Aucune installation : le pipeline tourne en continu sur Google Cloud (VM GCE pour le cœur streaming, Cloud Run pour le dashboard public), et chaque merge sur `main` redéploie automatiquement.
 
 ## Architecture
 
@@ -56,121 +58,43 @@ Déployé sur Google Cloud (VM GCE pour le cœur streaming, Cloud Run pour le da
 | Tests | pytest (couverture ≥ 90 % imposée), fakeredis, transports HTTP simulés |
 | Gestion de projet | uv (packaging & dépendances Python) |
 
-## Prérequis
+## Le dashboard
 
-- **Python ≥ 3.13**
-- **Docker** et **Docker Compose** (pour Kafka + Redis)
-- **uv** (gestionnaire de paquets Python) — [installation](https://docs.astral.sh/uv/)
+Servi par FastAPI, poussé en temps réel via **SSE** (le navigateur ne fait aucun polling : il reçoit chaque événement Kafka à la milliseconde) :
 
-## Installation
-
-```bash
-# Cloner le projet
-git clone <url-du-repo>
-cd velib
-
-# Installer les dépendances Python
-uv sync
-
-# Démarrer l'infrastructure (Kafka + Redis + UI)
-docker compose up -d
-```
-
-## Lancement
-
-Le pipeline nécessite **3 terminaux** :
-
-### 1. Producer — collecte les données Vélib' et publie dans Kafka
-
-```bash
-uv run python -m velib.kafka_producer
-```
-
-Interroge l'API Vélib' toutes les ~60 s, détecte les changements d'état des stations, et publie les événements dans le topic `velib.station.changes`.
-
-### 2. Consumer Redis — matérialise la photo dans Redis
-
-```bash
-uv run python -m velib.redis_consumer
-```
-
-Lit le flux Kafka et écrit l'état courant de chaque station dans Redis (vue matérialisée). Le dashboard lira cette photo au démarrage.
-
-### 3. Dashboard — carte temps réel
-
-```bash
-uv run python -m velib.dashboard
-```
-
-Ouvre le dashboard sur **http://localhost:8000** :
-- **Carte Leaflet** avec les ~1 500 stations (couleur = remplissage, animation « radar » = événement en direct, badge « EN DIRECT » reflétant l'état réel du flux)
-- **Stats** en bandeau : vélos disponibles, bornettes libres, stations vides/pleines/fermées
-- **Panneau BI** (bouton 📊 Activité), trois onglets :
-  - **Indicateurs** — KPIs instantanés (taux de remplissage, part électrique, stations sous tension, stations en service) et du jour (rotations, flux net, rythme/min avec sparkline, heure de pointe, station la plus active, comparaison à la moyenne archivée), tous mis à jour en direct par le flux SSE ;
-  - **Aujourd'hui (direct)** — courbe vélos pris/rendus du jour, granularité ajustable 1 min → 1 h, reconstruite depuis Kafka au démarrage du serveur et alimentée en continu ;
+- **Carte Leaflet** des ~1 500 stations — couleur = remplissage, taille ∝ capacité, animation « radar » à chaque changement, badge « EN DIRECT » reflétant l'état réel du flux (passe à « FLUX INTERROMPU » si la donnée vieillit).
+- **Deux modes** : « trouver un vélo » (couleur = vélos dispo) / « rendre un vélo » (couleur = bornettes libres).
+- **Bandeau de stats** : vélos disponibles, bornettes libres, stations vides/pleines/fermées.
+- **Panneau BI** (bouton 📊 Activité), quatre onglets :
+  - **Indicateurs** — KPIs instantanés (taux de remplissage, part électrique, stations sous tension) et du jour (rotations, flux net, rythme/min avec sparkline, heure de pointe), en direct via SSE ;
+  - **Métier** — vue exploitant : demande & revenus estimés, priorités de rééquilibrage (stations en défaut triées par la demande qu'elles portent), puits/sources (flux net par station) ;
+  - **Aujourd'hui (direct)** — courbe vélos pris/rendus, granularité ajustable 1 min → 1 h, reconstruite depuis Kafka au démarrage puis alimentée en continu ;
   - **Historique (archives)** — requêtes DuckDB sur les Parquet : volumes par jour, profil horaire moyen (signature jour/nuit).
 
-## Commandes utiles
+## Déploiement (GCP)
 
-```bash
-# Archiver les événements d'hier en Parquet (couche batch)
-uv run python -m velib.archiver
+Une **image Docker unique** ([Dockerfile](Dockerfile), build uv multi-couches) porte tous les rôles — dashboard par défaut, producer/consumer/archiver/weather via la commande. Les adresses (Kafka, Redis, port) viennent de l'environnement : le même code tourne dans Docker et sur Cloud Run.
 
-# Archiver une date précise
-uv run python -m velib.archiver 2026-07-19
+- **Cœur streaming sur une VM GCE** — Kafka, Redis, producer et consumer conteneurisés (`docker-compose.yml` + `docker-compose.prod.yml`), redémarrage automatique. Les Parquet produits sont poussés vers Cloud Storage.
+- **Dashboard sur Cloud Run** — public et toujours disponible, l'historique lu depuis le bucket monté en volume, mode dégradé automatique si Kafka est injoignable.
+- **CI/CD GitHub Actions** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) — sur `main` : tests (gate 90 %) → build → Artifact Registry → déploiement Cloud Run, authentifié par **Workload Identity Federation** (zéro clé stockée).
 
-# Ingérer la météo horaire (Open-Meteo → Parquet, pour le futur ML)
-uv run python -m velib.weather                        # hier
-uv run python -m velib.weather 2026-07-18 2026-07-25  # backfill d'une plage
-
-# Lancer les tests (couverture minimale exigée : 90 %)
-uv run pytest
-
-# Accéder aux UI d'admin
-# Kafka UI :       http://localhost:8080
-# Redis Insight :  http://localhost:5540
-# Airflow :        http://localhost:8081
-```
+Guide complet pas à pas : [docs/DEPLOY-GCP.md](docs/DEPLOY-GCP.md).
 
 ## Orchestration (Airflow)
 
-Les jobs batch sont orchestrés par **Apache Airflow 3** (conteneur `velib-airflow`,
-mode standalone — UI sur http://localhost:8081, sans login en local).
+Les jobs batch sont orchestrés par **Apache Airflow 3**. Le DAG [`velib_daily`](dags/velib_daily.py) tourne chaque nuit à 00h15 (Europe/Paris) et lance en parallèle, avec 3 retries chacun :
 
-Le DAG [`velib_daily`](dags/velib_daily.py) tourne chaque nuit à 00h15 (Europe/Paris)
-et lance en parallèle, avec 3 retries chacun :
-- `archive_events` — `python -m velib.archiver {{ ds }}` (les événements de la veille → Parquet) ;
-- `ingest_weather` — `python -m velib.weather {{ ds }}` (la météo de la veille → Parquet).
+- `archive_events` — les événements de la veille → Parquet ;
+- `ingest_weather` — la météo de la veille (Open-Meteo) → Parquet.
 
-`{{ ds }}` est la *logical date* d'Airflow (le début de l'intervalle couvert par le
-run) : relancer un vieux run archive la bonne date historique, sans calcul de « hier »
-dans le code. Le conteneur monte le repo entier ; le code parle à Kafka via le
-listener interne (`VELIB_BOOTSTRAP_SERVERS=kafka:19092`). Prochaine étape prévue :
-une tâche de chargement PostgreSQL en aval des deux archives.
-
-## Conteneurisation & déploiement (GCP)
-
-Une **image Docker unique** ([Dockerfile](Dockerfile), build uv multi-couches) porte tous
-les rôles — dashboard par défaut, producer/consumer/archiver/weather via la commande.
-Les adresses (Kafka, Redis, port) viennent de l'environnement : le même code tourne sur
-l'hôte, dans Docker et sur Cloud Run.
-
-- **Prod sur une VM GCE** : `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
-  (ajoute producer + consumer conteneurisés, l'adresse annoncée de Kafka, l'envoi des
-  Parquet vers GCS depuis Airflow).
-- **Dashboard sur Cloud Run** : jamais éteint, Parquet lus depuis le bucket monté en
-  volume, mode dégradé automatique si Kafka est injoignable.
-- **CI/CD GitHub Actions** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) :
-  push → tests (gate 90 %) → build → Artifact Registry → déploiement Cloud Run,
-  authentifié par Workload Identity Federation (zéro clé stockée).
-
-Guide complet pas à pas : [docs/DEPLOY-GCP.md](docs/DEPLOY-GCP.md).
+`{{ ds }}` est la *logical date* d'Airflow (le début de l'intervalle couvert par le run) : relancer un vieux run archive la bonne date historique, sans calcul de « hier » dans le code. Prochaine étape prévue : un chargement PostgreSQL analytique en aval des deux archives.
 
 ## Structure du projet
 
 ```
 velib/
-├── docker-compose.yml           # Infra locale : Kafka (KRaft) + Redis + Airflow + UIs
+├── docker-compose.yml           # Infra : Kafka (KRaft) + Redis + Airflow + UIs
 ├── docker-compose.prod.yml      # Overlay VM GCE : producer/consumer conteneurisés, envoi GCS
 ├── Dockerfile                   # Image unique multi-rôles (build uv multi-couches)
 ├── pyproject.toml               # Métadonnées projet & dépendances
@@ -251,7 +175,6 @@ velib/
   (~1 500 événements à `bikes_delta=0`). Piste : `RedisStateStore` via le Protocol `PreviousStateStore` existant.
 - Le contrat de schéma est implicite (`to_json`/`parse_event`). Version industrielle : Avro + Schema
   Registry, et une dead letter queue à la place du log d'écartement.
-- L'agrégation d'activité n'est pas idempotente en cas de replay partiel (tolérable pour des tendances).
 - La VM est un point unique de défaillance (single-node Kafka/Redis) — en production on passerait à
   un cluster Kafka managé + Redis répliqué ; le déploiement ne met à jour que le dashboard (Cloud Run),
   les composants VM se mettent à jour à la main (`git pull` + `docker compose up -d`).
@@ -260,3 +183,9 @@ velib/
 - À venir (voir [docs/ROADMAP-IA.md](docs/ROADMAP-IA.md)) : chargement PostgreSQL analytique,
   croisement météo (les horodatages sont volontairement restés en epoch UTC pour ça), prédiction de
   disponibilité par station, agent conversationnel LLM sur les données.
+
+## Développement local
+
+Le code de développement, l'infrastructure locale (Docker Compose) et les instructions pour lancer le
+pipeline sur sa machine vivent sur la branche [`dev`](https://github.com/Nadirici/velib/tree/dev).
+Le détail du déploiement cloud est dans [docs/DEPLOY-GCP.md](docs/DEPLOY-GCP.md).

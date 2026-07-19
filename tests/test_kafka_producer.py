@@ -81,13 +81,11 @@ class TestDeliveryReport:
 
     def test_echec_logge_la_cle(self, capsys):
         kp.delivery_report("boom", self._msg())
-        assert "failed" in capsys.readouterr().out
+        assert "Échec" in capsys.readouterr().out
 
-    def test_succes(self, capsys):
+    def test_succes_silencieux(self, capsys):
         kp.delivery_report(None, self._msg())
-        out = capsys.readouterr().out
-        # Succès silencieux OU verbeux : dans tous les cas, jamais "failed".
-        assert "failed" not in out
+        assert capsys.readouterr().out == ""
 
 
 class TestPublishEvents:
@@ -152,7 +150,7 @@ class TestRun:
         assert calls["ensure"] == 1
         assert len(producer.produced) == 1      # 1 état initial publié
         assert producer.flushes >= 1            # flush de sortie propre
-        assert "1 events" in capsys.readouterr().out
+        assert "1 événements publiés" in capsys.readouterr().out
 
     def test_erreur_api_ne_tue_pas_la_boucle(self, wired, monkeypatch,
                                              make_state, capsys):
@@ -163,4 +161,4 @@ class TestRun:
         # L'erreur HTTP a été absorbée : on a quand même atteint le sleep.
         assert calls["sleeps"] == 1
         assert producer.produced == []
-        assert "Error" in capsys.readouterr().out
+        assert "Erreur API" in capsys.readouterr().out

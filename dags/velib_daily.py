@@ -1,30 +1,10 @@
 """DAG quotidien : archive la veille (événements Kafka + météo) en Parquet.
 
-Les concepts Airflow à connaître, incarnés ici :
-
-- **DAG** (directed acyclic graph) : un ensemble de tâches et leurs
-  dépendances. Airflow ne fait qu'orchestrer — planifier, lancer, réessayer,
-  historiser — le travail réel reste dans nos modules CLI.
-
-- **schedule + logical date** : le cron "15 0 * * *" déclenche chaque nuit à
-  00h15 (Paris, via la start_date tz-aware). Subtilité fondatrice d'Airflow :
-  un run « couvre » un intervalle de données, et `{{ ds }}` (template Jinja)
-  vaut le DÉBUT de cet intervalle — donc LA VEILLE au moment du déclenchement.
-  C'est exactement l'argument qu'attendent nos CLIs : le run du 20 à 00h15
-  archive le 19. On ne calcule jamais « hier » nous-mêmes : si on relance un
-  vieux run, {{ ds }} vaut la bonne date historique (idempotence + rejouabilité).
-
-- **catchup=False** : au premier démarrage, ne pas générer tous les runs
-  manqués depuis start_date (la rétention Kafka de 7 jours les bornerait de
-  toute façon). Un rattrapage ciblé reste possible depuis l'UI (▶ Trigger avec
-  une logical date) ou `airflow dags backfill`.
-
-- **retries** : une nuit où l'API météo tousse ne doit pas coûter la journée —
-  3 tentatives espacées de 10 min, puis l'échec devient visible (case rouge).
-
-Les deux tâches sont indépendantes (pas de >>) : l'échec de la météo ne bloque
-pas l'archivage des événements, et inversement. Le futur chargement PostgreSQL,
-lui, dépendra des deux : [archive_events, ingest_weather] >> load_postgres.
+Déclenché chaque nuit à 00h15 (Paris). `{{ ds }}` — la logical date, début de
+l'intervalle couvert par le run — vaut la veille et est passé aux CLIs : rejouer
+un ancien run archive la bonne date, sans calcul de « hier » dans le code.
+Les deux tâches sont indépendantes (l'échec de l'une ne bloque pas l'autre) et
+retentées 3 fois. Airflow n'orchestre que ; le travail vit dans les modules velib.
 """
 
 from __future__ import annotations
@@ -47,10 +27,8 @@ with DAG(
     },
     tags=["velib", "batch"],
 ) as dag:
-    # cwd=/opt/velib : les CLIs écrivent dans data/ en relatif, et le repo est
-    # monté là par docker-compose. PYTHONPATH et l'adresse Kafka interne
-    # (VELIB_BOOTSTRAP_SERVERS=kafka:19092) viennent de l'environnement du
-    # conteneur — le code est identique dedans et dehors.
+    # cwd=/opt/velib : les CLIs écrivent dans data/ en relatif (repo monté par
+    # docker-compose) ; PYTHONPATH et l'adresse Kafka viennent de l'environnement.
     archive_events = BashOperator(
         task_id="archive_events",
         bash_command="python -m velib.archiver {{ ds }}",

@@ -63,13 +63,11 @@ def _relay_loop() -> None:
         "enable.auto.commit": False,
     })
 
-    # --- Phase 1 : reconstruire l'activité du jour depuis le journal -------
-    # offsets_for_times : le broker indexe par horodatage → « premier offset
-    # ≥ minuit », partition par partition. On rejoue jusqu'au bout du journal
-    # (high watermark) SANS diffuser aux navigateurs : c'est du rattrapage.
-    # Si Kafka est injoignable (ex. Cloud Run sans accès au broker), on ne
-    # tue pas le serveur : le dashboard sert la photo Redis et l'historique
-    # Parquet, en mode dégradé sans temps réel.
+    # --- Phase 1 : reconstruction de l'activité du jour depuis le journal ---
+    # offsets_for_times borne la journée [minuit, fin du journal] ; on rejoue
+    # sans diffuser (rattrapage). Si Kafka est injoignable (ex. Cloud Run sans
+    # accès au broker), le dashboard démarre en mode dégradé : photo Redis +
+    # historique Parquet, sans temps réel.
     try:
         meta = consumer.list_topics(TOPIC, timeout=10).topics[TOPIC]
         day_ms = _activity.day_start * 1000
