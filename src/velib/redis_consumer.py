@@ -31,14 +31,15 @@ Lancer :
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from typing import Callable
 
 import redis
 from .models import StationChangeEvent
 
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+REDIS_HOST = os.getenv("VELIB_REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("VELIB_REDIS_PORT", "6379"))
 
 # Groupe DIFFÉRENT du moniteur : ce consumer a sa propre position de lecture,
 # indépendante — les deux peuvent tourner en même temps sur le même topic.

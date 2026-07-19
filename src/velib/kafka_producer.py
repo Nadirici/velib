@@ -19,6 +19,7 @@ Lancer :
 
 from __future__ import annotations
 
+import os
 import time
 
 from confluent_kafka import Message, Producer
@@ -32,7 +33,9 @@ import httpx
 
 # Adresse de bootstrap : le point d'entrée du cluster. Le client s'y connecte,
 # découvre la topologie (brokers, partitions), puis parle aux bons brokers.
-BOOTSTRAP_SERVERS = "localhost:9092"
+# Surchargable par env : depuis un conteneur (Airflow), Kafka s'appelle
+# kafka:19092 (listener INTERNAL), pas localhost:9092.
+BOOTSTRAP_SERVERS = os.getenv("VELIB_BOOTSTRAP_SERVERS", "localhost:9092")
 
 TOPIC = "velib.station.changes"
 

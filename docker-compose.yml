@@ -100,7 +100,51 @@ services:
       # Mémorise la connexion configurée dans l'UI entre deux redémarrages.
       - redisinsight-data:/data
 
+  airflow:
+    # Orchestrateur des jobs batch (archivage événements + météo, plus tard
+    # le chargement PostgreSQL). Mode « standalone » : scheduler, api-server
+    # et dag-processor dans UN conteneur avec une base SQLite — parfait en
+    # local ; en prod on séparerait tout (executor distribué + Postgres).
+    image: apache/airflow:3.1.0
+    container_name: velib-airflow
+    depends_on:
+      - kafka
+    command: airflow standalone
+    ports:
+      - "8081:8080"   # UI : http://localhost:8081 (8080 est pris par kafka-ui)
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/velib/dags
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/Paris
+      # Auth locale sans login (à ne JAMAIS faire en prod).
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+      # Nos dépendances, installées au démarrage du conteneur : le raccourci
+      # dev officiel de l'image. En prod : une image custom (FROM airflow +
+      # pip install), jamais ce raccourci.
+      _PIP_ADDITIONAL_REQUIREMENTS: "confluent-kafka duckdb httpx truststore"
+      # Le code tourne DANS le réseau Docker : Kafka via le listener INTERNAL.
+      VELIB_BOOTSTRAP_SERVERS: kafka:19092
+      PYTHONPATH: /opt/velib/src
+    volumes:
+      # Tout le repo : le code (via PYTHONPATH) et data/ où atterrissent les
+      # Parquet — écrits par Airflow, lus par le dashboard côté hôte.
+      - .:/opt/velib
+      - airflow-data:/opt/airflow
+
+  # TODO (étape suivante de la roadmap) : PostgreSQL, cible du chargement
+  # analytique orchestré par Airflow.
+  # postgres:
+  #   image: postgres:17-alpine
+  #   ports: ["5432:5432"]
+  #   environment:
+  #     POSTGRES_USER: velib
+  #     POSTGRES_PASSWORD: velib
+  #     POSTGRES_DB: velib
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+
 volumes:
   kafka-data:
   redis-data:
   redisinsight-data:
+  airflow-data:

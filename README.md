@@ -112,13 +112,30 @@ uv run python -m velib.archiver 2026-07-19
 uv run python -m velib.weather                        # hier
 uv run python -m velib.weather 2026-07-18 2026-07-25  # backfill d'une plage
 
-# Lancer les tests
+# Lancer les tests (couverture minimale exigée : 90 %)
 uv run pytest
 
 # Accéder aux UI d'admin
 # Kafka UI :       http://localhost:8080
 # Redis Insight :  http://localhost:5540
+# Airflow :        http://localhost:8081
 ```
+
+## Orchestration (Airflow)
+
+Les jobs batch sont orchestrés par **Apache Airflow 3** (conteneur `velib-airflow`,
+mode standalone — UI sur http://localhost:8081, sans login en local).
+
+Le DAG [`velib_daily`](dags/velib_daily.py) tourne chaque nuit à 00h15 (Europe/Paris)
+et lance en parallèle, avec 3 retries chacun :
+- `archive_events` — `python -m velib.archiver {{ ds }}` (les événements de la veille → Parquet) ;
+- `ingest_weather` — `python -m velib.weather {{ ds }}` (la météo de la veille → Parquet).
+
+`{{ ds }}` est la *logical date* d'Airflow (le début de l'intervalle couvert par le
+run) : relancer un vieux run archive la bonne date historique, sans calcul de « hier »
+dans le code. Le conteneur monte le repo entier ; le code parle à Kafka via le
+listener interne (`VELIB_BOOTSTRAP_SERVERS=kafka:19092`). Prochaine étape prévue :
+une tâche de chargement PostgreSQL en aval des deux archives.
 
 ## Structure du projet
 
