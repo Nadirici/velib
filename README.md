@@ -1,6 +1,8 @@
 # Vélib' — Pipeline temps réel & dashboard
 
-Pipeline de données temps réel qui collecte l'état des ~1 400 stations Vélib' Métropole, détecte les changements (vélos pris/rendus), et les visualise sur un dashboard cartographique en direct.
+[![CI/CD](https://github.com/Nadirici/velib/actions/workflows/ci.yml/badge.svg)](https://github.com/Nadirici/velib/actions/workflows/ci.yml)
+
+Pipeline de données temps réel qui collecte l'état des ~1 500 stations Vélib' Métropole, détecte les changements (vélos pris/rendus), et les visualise sur un dashboard cartographique en direct.
 
 ## Architecture
 
