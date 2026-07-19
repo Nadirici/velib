@@ -32,6 +32,8 @@ import duckdb
 import httpx
 import truststore
 
+from .gcs import upload_if_configured
+
 # Même raison que velib_api : magasin de certificats de l'OS (proxy SSL).
 _SSL_CONTEXT = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
@@ -127,6 +129,8 @@ def main() -> None:
         temps = [r[3] for r in rows]
         print(f"{day.isoformat()} → {out}  "
               f"(pluie {rain:.1f} mm · T {min(temps):.0f}–{max(temps):.0f} °C)")
+        if uri := upload_if_configured(out):
+            print(f"  envoyé → {uri}")
         day += timedelta(days=1)
 
 

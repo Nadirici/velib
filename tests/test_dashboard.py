@@ -234,6 +234,19 @@ class TestRelayLoop:
         assert "2 événements rejoués" in capsys.readouterr().out
 
 
+class TestRelayDegrade:
+    def test_kafka_injoignable_ne_tue_pas_le_serveur(self, dash, monkeypatch, capsys):
+        """Cloud Run sans accès au broker : le relais abandonne proprement,
+        le dashboard sert la photo et l'historique sans temps réel."""
+        class DeadConsumer:
+            def list_topics(self, topic, timeout=None):
+                raise RuntimeError("broker unreachable")
+
+        monkeypatch.setattr(dash, "Consumer", lambda cfg: DeadConsumer())
+        dash._relay_loop()    # ne doit PAS lever
+        assert "temps réel désactivé" in capsys.readouterr().out
+
+
 def test_index_sert_la_page(dash):
     response = TestClient(dash.app).get("/")
     assert response.status_code == 200

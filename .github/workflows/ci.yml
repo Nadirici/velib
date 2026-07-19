@@ -1,0 +1,65 @@
+# CI/CD : tests à chaque push/PR, build + déploiement Cloud Run sur master.
+#
+# Prérequis côté GitHub (voir docs/DEPLOY-GCP.md pour leur création) :
+#   secrets : GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_SA_EMAIL
+#   variable : GCP_REGION (ex. europe-west1)
+#
+# Auth GCP par Workload Identity Federation : GitHub prouve son identité par
+# jeton OIDC, aucune clé de service account stockée — le standard actuel.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Installer les dépendances
+        run: uv sync --frozen
+      - name: Tests + couverture (échec sous 90 %)
+        run: uv run pytest
+
+  deploy:
+    # Uniquement sur master, et seulement si les tests passent : c'est la
+    # définition même du déploiement continu avec garde-fou.
+    needs: tests
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # requis pour l'OIDC de Workload Identity Federation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authentification GCP (sans clé)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build & push de l'image vers Artifact Registry
+        run: |
+          IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/velib/velib:${{ github.sha }}"
+          gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Déployer le dashboard sur Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: velib-dashboard
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGE }}
+          # Le reste de la config du service (env vars, volume GCS, VPC) est
+          # posé une fois pour toutes à la création — voir docs/DEPLOY-GCP.md.
+          # Le déploiement ne fait que remplacer l'image : la config persiste.

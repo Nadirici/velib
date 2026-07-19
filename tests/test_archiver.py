@@ -139,3 +139,13 @@ class TestMain:
         out = capsys.readouterr().out
         assert "2 événements" in out
         assert "vélos pris : 2" in out
+
+    def test_envoi_gcs_si_configure(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.chdir(tmp_path)
+        ts = ar._epoch_ms(date(2026, 7, 18)) // 1000
+        monkeypatch.setattr(ar, "fetch_day_events", lambda d: [make_event(ts)])
+        monkeypatch.setattr(ar, "upload_if_configured",
+                            lambda path: f"gs://bucket/{path.name}")
+        monkeypatch.setattr(ar.sys, "argv", ["archiver", "2026-07-18"])
+        ar.main()
+        assert "envoyé → gs://bucket/events.parquet" in capsys.readouterr().out

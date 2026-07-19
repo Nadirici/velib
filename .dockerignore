@@ -1,0 +1,13 @@
+# Tout ce qui n'a rien à faire dans l'image (contexte de build minimal).
+.git
+.venv
+.pytest_cache
+.coverage
+__pycache__
+**/__pycache__
+data
+dags
+docs
+tests
+.claude
+*.md

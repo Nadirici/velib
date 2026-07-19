@@ -91,3 +91,11 @@ class TestMain:
         monkeypatch.setattr(wx.sys, "argv", ["weather"])
         wx.main()
         assert fetched == [date.today() - timedelta(days=1)]
+
+    def test_envoi_gcs_si_configure(self, monkeypatch, tmp_path, capsys):
+        self._wire(monkeypatch, tmp_path)
+        monkeypatch.setattr(wx, "upload_if_configured",
+                            lambda path: f"gs://bucket/{path.name}")
+        monkeypatch.setattr(wx.sys, "argv", ["weather", "2026-07-18"])
+        wx.main()
+        assert "envoyé → gs://bucket/weather.parquet" in capsys.readouterr().out

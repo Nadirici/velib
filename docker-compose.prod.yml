@@ -1,0 +1,55 @@
+# Overlay de production pour la VM GCE — à combiner avec le compose de base :
+#
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Ce fichier ajoute ce qui, en dev, tourne à la main dans des terminaux :
+# le producer et le consumer Redis, conteneurisés avec l'image du projet,
+# redémarrage automatique compris. Il ajuste aussi l'adresse annoncée par
+# Kafka : sur la VM, les clients externes (Cloud Run) le joignent par l'IP
+# interne de la VM, pas par localhost.
+#
+# Variables attendues dans un fichier .env à côté (sur la VM) :
+#   VM_INTERNAL_IP=10.x.x.x     IP interne de la VM (gcloud compute instances list)
+#   VELIB_GCS_BUCKET=mon-bucket Bucket des Parquet (les jobs Airflow y poussent)
+
+services:
+  kafka:
+    environment:
+      # Cloud Run (même VPC) joint le broker via l'IP interne de la VM.
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${VM_INTERNAL_IP:-localhost}:9092
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  producer:
+    build: .
+    image: velib:local
+    container_name: velib-producer
+    command: python -m velib.kafka_producer
+    environment:
+      VELIB_BOOTSTRAP_SERVERS: kafka:19092
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  redis-consumer:
+    build: .
+    image: velib:local
+    container_name: velib-redis-consumer
+    command: python -m velib.redis_consumer
+    environment:
+      VELIB_BOOTSTRAP_SERVERS: kafka:19092
+      VELIB_REDIS_HOST: redis
+    depends_on:
+      - kafka
+      - redis
+    restart: unless-stopped
+
+  airflow:
+    restart: unless-stopped
+    environment:
+      # Les jobs du DAG poussent leurs Parquet vers le bucket ; sur GCE,
+      # l'authentification vient de l'identité de la VM (aucune clé).
+      VELIB_GCS_BUCKET: ${VELIB_GCS_BUCKET:-}
+      _PIP_ADDITIONAL_REQUIREMENTS: "confluent-kafka duckdb httpx truststore google-cloud-storage"

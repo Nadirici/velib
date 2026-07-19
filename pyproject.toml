@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.139.2",
     "uvicorn>=0.51.0",
     "duckdb>=1.5.4",
+    "google-cloud-storage>=3.13.0",
 ]
 
 [dependency-groups]

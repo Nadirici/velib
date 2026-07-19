@@ -137,6 +137,24 @@ dans le code. Le conteneur monte le repo entier ; le code parle à Kafka via le
 listener interne (`VELIB_BOOTSTRAP_SERVERS=kafka:19092`). Prochaine étape prévue :
 une tâche de chargement PostgreSQL en aval des deux archives.
 
+## Conteneurisation & déploiement (GCP)
+
+Une **image Docker unique** ([Dockerfile](Dockerfile), build uv multi-couches) porte tous
+les rôles — dashboard par défaut, producer/consumer/archiver/weather via la commande.
+Les adresses (Kafka, Redis, port) viennent de l'environnement : le même code tourne sur
+l'hôte, dans Docker et sur Cloud Run.
+
+- **Prod sur une VM GCE** : `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
+  (ajoute producer + consumer conteneurisés, l'adresse annoncée de Kafka, l'envoi des
+  Parquet vers GCS depuis Airflow).
+- **Dashboard sur Cloud Run** : jamais éteint, Parquet lus depuis le bucket monté en
+  volume, mode dégradé automatique si Kafka est injoignable.
+- **CI/CD GitHub Actions** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) :
+  push → tests (gate 90 %) → build → Artifact Registry → déploiement Cloud Run,
+  authentifié par Workload Identity Federation (zéro clé stockée).
+
+Guide complet pas à pas : [docs/DEPLOY-GCP.md](docs/DEPLOY-GCP.md).
+
 ## Structure du projet
 
 ```

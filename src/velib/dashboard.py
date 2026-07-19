@@ -25,6 +25,7 @@ Lancer :
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import time
@@ -66,19 +67,26 @@ def _relay_loop() -> None:
     # offsets_for_times : le broker indexe par horodatage → « premier offset
     # ≥ minuit », partition par partition. On rejoue jusqu'au bout du journal
     # (high watermark) SANS diffuser aux navigateurs : c'est du rattrapage.
-    meta = consumer.list_topics(TOPIC, timeout=10).topics[TOPIC]
-    day_ms = _activity.day_start * 1000
-    starts = consumer.offsets_for_times(
-        [TopicPartition(TOPIC, p, day_ms) for p in meta.partitions], timeout=10
-    )
-    todo: dict[int, int] = {}
-    for tp in starts:
-        _, high = consumer.get_watermark_offsets(tp, timeout=10)
-        if tp.offset < 0:          # aucun message depuis minuit :
-            tp.offset = high       # se placer à la fin, rien à rejouer
-        elif tp.offset < high:
-            todo[tp.partition] = high
-    consumer.assign(starts)
+    # Si Kafka est injoignable (ex. Cloud Run sans accès au broker), on ne
+    # tue pas le serveur : le dashboard sert la photo Redis et l'historique
+    # Parquet, en mode dégradé sans temps réel.
+    try:
+        meta = consumer.list_topics(TOPIC, timeout=10).topics[TOPIC]
+        day_ms = _activity.day_start * 1000
+        starts = consumer.offsets_for_times(
+            [TopicPartition(TOPIC, p, day_ms) for p in meta.partitions], timeout=10
+        )
+        todo: dict[int, int] = {}
+        for tp in starts:
+            _, high = consumer.get_watermark_offsets(tp, timeout=10)
+            if tp.offset < 0:          # aucun message depuis minuit :
+                tp.offset = high       # se placer à la fin, rien à rejouer
+            elif tp.offset < high:
+                todo[tp.partition] = high
+        consumer.assign(starts)
+    except Exception as e:
+        print(f"[relay] Kafka injoignable, temps réel désactivé : {e!r}")
+        return
 
     replayed = 0
     while todo:
@@ -336,7 +344,13 @@ def index() -> FileResponse:
 
 
 def main() -> None:  # pragma: no cover
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # Cloud Run impose son port via $PORT et exige d'écouter sur 0.0.0.0
+    # (HOST posé par le Dockerfile) ; en local, rien ne change.
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "8000")),
+    )
 
 
 if __name__ == "__main__":

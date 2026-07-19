@@ -35,6 +35,7 @@ from pathlib import Path
 import duckdb
 from confluent_kafka import Consumer, TopicPartition
 
+from .gcs import upload_if_configured
 from .kafka_producer import BOOTSTRAP_SERVERS, TOPIC
 
 DATA_DIR = Path("data") / "events"
@@ -160,6 +161,8 @@ def main() -> None:
     print(f"{len(events)} événements → {out}")
     print(f"  vélos pris : {taken} · vélos rendus : "
           f"{sum(e['bikes_delta'] for e in events if e['bikes_delta'] > 0)}")
+    if uri := upload_if_configured(out):
+        print(f"  envoyé → {uri}")
 
 
 if __name__ == "__main__":
