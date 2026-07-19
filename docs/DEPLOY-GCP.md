@@ -108,7 +108,7 @@ gcloud run deploy velib-dashboard \
   --network=default --subnet=default \
   --add-volume=name=data,type=cloud-storage,bucket=$PROJECT-data,readonly=true \
   --add-volume-mount=volume=data,mount-path=/app/data \
-  --set-env-vars=VELIB_BOOTSTRAP_SERVERS=$VM_IP:9092,VELIB_REDIS_HOST=$VM_IP
+  --set-env-vars=VELIB_BOOTSTRAP_SERVERS=$VM_IP:9092,VELIB_REDIS_HOST=$VM_IP,TZ=Europe/Paris
 ```
 
 Notes :

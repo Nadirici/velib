@@ -113,6 +113,10 @@ services:
     ports:
       - "8081:8080"   # UI : http://localhost:8081 (8080 est pris par kafka-ui)
     environment:
+      # Fuseau du système DANS le conteneur : l'archiveur et le job météo
+      # découpent les journées (day_start) et calculent la colonne `hour` en
+      # heure locale — Paris, pour coller aux données Vélib et au dashboard.
+      TZ: Europe/Paris
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/velib/dags
       AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/Paris
