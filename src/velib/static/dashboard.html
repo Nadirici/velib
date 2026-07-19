@@ -361,13 +361,19 @@
 
     #panel {
       background: var(--surface);
-      border-bottom: 1px solid var(--border);
       padding: 10px 16px 14px;
       display: none;
     }
 
+    /* Ouvert : le panneau prend TOUTE la hauteur restante (la carte est
+       masquée en JS) et défile si le contenu déborde. La carte n'étant plus
+       rendue, on gagne en fluidité pendant l'analyse. */
     #panel.open {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
     }
 
     .panel-head {
@@ -453,6 +459,41 @@
     .chart-box svg {
       display: block;
       width: 100%;
+    }
+
+    /* Rectangle de sélection du zoom (glisser sur la courbe) */
+    .chart-sel {
+      position: absolute;
+      top: 10px;
+      height: 138px;
+      background: rgba(42, 120, 214, 0.16);
+      border-left: 1px solid var(--series-blue);
+      border-right: 1px solid var(--series-blue);
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Bouton de réinitialisation du zoom (visible quand zoomé) */
+    .chart-reset {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--ink-2);
+      font-size: 13px;
+      cursor: pointer;
+      z-index: 5;
+    }
+
+    .chart-reset:hover {
+      color: var(--ink);
     }
 
     .chart-tip {
@@ -974,6 +1015,7 @@
           <div class="chart-legend">
             <span><span class="lswatch" style="background:var(--series-blue)"></span>Vélos pris</span>
             <span><span class="lswatch" style="background:var(--series-green)"></span>Vélos rendus</span>
+            <span style="color:var(--muted)">· glisser pour zoomer · double-clic pour réinitialiser</span>
           </div>
           <div class="chart-box" id="liveChart"></div>
         </div>
@@ -1669,13 +1711,36 @@
       return 10 * p;
     }
 
+    // Glisser sur une courbe pour zoomer sur une plage de temps ; double-clic
+    // ou bouton ⟲ pour réinitialiser. La fenêtre de zoom est mémorisée en
+    // valeur X (temps) sur la box, donc elle survit aux redraws du direct.
+    var chartDragging = false;
+
     function drawLineChart(box, xs, series, fmtX) {
-      var n = xs.length;
-      if (!n) { box.innerHTML = ""; return; }
+      box._data = { xs: xs, series: series, fmtX: fmtX };
+      paintLine(box);
+    }
+
+    function paintLine(box) {
+      var d = box._data;
+      if (!d || !d.xs.length) { box.innerHTML = ""; return; }
+      var xs = d.xs, series = d.series, fmtX = d.fmtX, full = xs.length;
+
+      // Découpe selon la fenêtre de zoom courante (en valeur X).
+      var i0 = 0, i1 = full - 1;
+      if (box._zx) {
+        while (i0 < full - 1 && xs[i0] < box._zx.min) i0++;
+        while (i1 > 0 && xs[i1] > box._zx.max) i1--;
+        if (i1 - i0 < 1) { i0 = 0; i1 = full - 1; box._zx = null; }
+      }
+      var vx = xs.slice(i0, i1 + 1);
+      var vs = series.map(function (s) { return { name: s.name, color: s.color, values: s.values.slice(i0, i1 + 1) }; });
+      var n = vx.length;
+
       var W = Math.max(box.clientWidth || 0, 320), H = 170;
       var P = { l: 42, r: 14, t: 10, b: 22 };
       var iw = W - P.l - P.r, ih = H - P.t - P.b;
-      var ymax = niceCeil(Math.max(5, ...series.flatMap(function (s) { return s.values; })));
+      var ymax = niceCeil(Math.max(5, ...vs.flatMap(function (s) { return s.values; })));
       var X = function (i) { return P.l + (n < 2 ? iw / 2 : (i / (n - 1)) * iw); };
       var Y = function (v) { return P.t + ih - (v / ymax) * ih; };
       var muted = cssVar("--muted"), gridc = cssVar("--border");
@@ -1689,37 +1754,79 @@
       var nt = Math.min(6, n);
       for (var k = 0; k < nt; k++) {
         var i = Math.round((k / Math.max(nt - 1, 1)) * (n - 1));
-        g += '<text x="' + X(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="10" fill="' + muted + '">' + fmtX(xs[i]) + '</text>';
+        g += '<text x="' + X(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="10" fill="' + muted + '">' + fmtX(vx[i]) + '</text>';
       }
-      var paths = series.map(function (s) {
+      var paths = vs.map(function (s) {
         return '<path d="M' + s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join("L") + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
       }).join("");
 
+      var resetBtn = box._zx ? '<div class="chart-reset" title="Réinitialiser le zoom">⟲</div>' : '';
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '">' + g + paths +
         '<line class="ch" x1="0" y1="' + P.t + '" x2="0" y2="' + (P.t + ih) + '" stroke="' + muted + '" visibility="hidden"/>' +
-        '<rect x="' + P.l + '" y="' + P.t + '" width="' + iw + '" height="' + ih + '" fill="transparent"/>' +
-        '</svg><div class="chart-tip"></div>';
+        '<rect class="plot" x="' + P.l + '" y="' + P.t + '" width="' + iw + '" height="' + ih + '" fill="transparent" style="cursor:crosshair"/>' +
+        '</svg><div class="chart-sel"></div><div class="chart-tip"></div>' + resetBtn;
 
       var svg = box.querySelector("svg");
       var tip = box.querySelector(".chart-tip");
       var ch = box.querySelector(".ch");
-      svg.addEventListener("mousemove", function (e) {
+      var sel = box.querySelector(".chart-sel");
+      var plot = box.querySelector(".plot");
+
+      function idxAt(clientX) {
         var r = svg.getBoundingClientRect();
-        var mx = ((e.clientX - r.left) / r.width) * W;
-        var idx = Math.max(0, Math.min(n - 1, Math.round(((mx - P.l) / iw) * (n - 1))));
-        ch.setAttribute("x1", X(idx));
-        ch.setAttribute("x2", X(idx));
+        var mx = ((clientX - r.left) / r.width) * W;
+        return Math.max(0, Math.min(n - 1, Math.round(((mx - P.l) / iw) * (n - 1))));
+      }
+
+      svg.addEventListener("mousemove", function (e) {
+        if (chartDragging) return;
+        var idx = idxAt(e.clientX);
+        ch.setAttribute("x1", X(idx)); ch.setAttribute("x2", X(idx));
         ch.setAttribute("visibility", "visible");
         tip.style.display = "block";
-        tip.innerHTML = '<b>' + fmtX(xs[idx]) + '</b>' + series.map(function (s) { return '<br>' + s.name + ' : ' + fmtN(s.values[idx]); }).join("");
+        tip.innerHTML = '<b>' + fmtX(vx[idx]) + '</b>' + vs.map(function (s) { return '<br>' + s.name + ' : ' + fmtN(s.values[idx]); }).join("");
         var bx = box.getBoundingClientRect();
         tip.style.left = Math.min(e.clientX - bx.left + 14, bx.width - tip.offsetWidth - 4) + "px";
         tip.style.top = "6px";
       });
       svg.addEventListener("mouseleave", function () {
-        tip.style.display = "none";
-        ch.setAttribute("visibility", "hidden");
+        tip.style.display = "none"; ch.setAttribute("visibility", "hidden");
       });
+
+      // Brush de zoom
+      var startX = null, startIdx = 0;
+      function onMove(e) {
+        if (startX == null) return;
+        var bx = box.getBoundingClientRect();
+        var a = Math.min(startX, e.clientX) - bx.left;
+        var b = Math.max(startX, e.clientX) - bx.left;
+        sel.style.display = "block";
+        sel.style.left = a + "px";
+        sel.style.width = (b - a) + "px";
+      }
+      function onUp(e) {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        chartDragging = false;
+        if (startX == null) return;
+        var lo = Math.min(startIdx, idxAt(e.clientX)), hi = Math.max(startIdx, idxAt(e.clientX));
+        startX = null;
+        sel.style.display = "none";
+        if (hi - lo >= 1) { box._zx = { min: vx[lo], max: vx[hi] }; paintLine(box); }
+      }
+      plot.addEventListener("mousedown", function (e) {
+        startX = e.clientX; startIdx = idxAt(e.clientX);
+        chartDragging = true;
+        tip.style.display = "none"; ch.setAttribute("visibility", "hidden");
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        e.preventDefault();
+      });
+      svg.addEventListener("dblclick", function () {
+        if (box._zx) { box._zx = null; paintLine(box); }
+      });
+      var rb = box.querySelector(".chart-reset");
+      if (rb) rb.addEventListener("click", function () { box._zx = null; paintLine(box); });
     }
 
     function drawBarChart(box, items) {
@@ -1772,7 +1879,7 @@
     }
 
     function renderLiveChart() {
-      if (biTab !== "live" || dayStart == null) return;
+      if (biTab !== "live" || dayStart == null || chartDragging) return;
       var now = Math.floor(Date.now() / 1000 + clockOffset);
       var xs = [], taken = [], returned = [];
       for (var t = dayStart; t <= now; t += step) {
@@ -1840,8 +1947,15 @@
       panelOpen = !panelOpen;
       panelEl.classList.toggle("open", panelOpen);
       document.getElementById("panelBtn").classList.toggle("active", panelOpen);
-      setTimeout(function () { map.invalidateSize(); }, 600);
-      if (panelOpen) loadBiTab();
+      // Analyse = plein écran : on masque la carte (elle n'est plus rendue du
+      // tout → fluidité) ; à la fermeture on la réaffiche et on recalcule sa
+      // taille (elle était en display:none).
+      document.getElementById("map").style.display = panelOpen ? "none" : "";
+      if (panelOpen) {
+        loadBiTab();
+      } else {
+        setTimeout(function () { map.invalidateSize(); }, 50);
+      }
     });
 
     function loadBiTab() {
