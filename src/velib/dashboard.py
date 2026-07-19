@@ -147,20 +147,88 @@ def _parse_station(raw: dict[str, str]) -> dict:
     return parsed
 
 
-@app.get("/api/stations")
-def stations() -> dict:
-    """Snapshot complet : la photo Redis + horodatages pour la fraîcheur."""
+def _snapshot_stations() -> list[dict]:
+    """La photo Redis complète, retypée (un seul aller-retour via pipeline)."""
     ids = _r.smembers("velib:stations")
     pipe = _r.pipeline()
     for sid in ids:
         pipe.hgetall(station_key(int(sid)))
-    raws = pipe.execute()
+    return [_parse_station(raw) for raw in pipe.execute() if raw]
 
+
+@app.get("/api/stations")
+def stations() -> dict:
+    """Snapshot complet : la photo Redis + horodatages pour la fraîcheur."""
     last_ts = _r.get("velib:last_ts")
     return {
         "now": int(time.time()),
         "last_ts": int(last_ts) if last_ts else None,
-        "stations": [_parse_station(raw) for raw in raws if raw],
+        "stations": _snapshot_stations(),
+    }
+
+
+@app.get("/api/business")
+def business() -> dict:
+    """Vue « exploitant » : jointure de la photo (état courant) et des flux du
+    jour par station (couche vitesse). Tout est pensé actionnable :
+    - `rebalance` : stations en défaut (vides/pleines) triées par la demande
+      qu'elles portent — la liste de tournée des camions de rééquilibrage ;
+    - `sinks` / `sources` : où les vélos s'accumulent / d'où ils partent
+      (flux net du jour) — le plan de reposition du soir ;
+    - `at_risk_moves` : la part de la demande du jour portée par des stations
+      actuellement en défaut — un proxy de la demande non servie.
+    """
+    flows = _activity.station_flows()
+    snapshot = _snapshot_stations()
+
+    today_taken = sum(t for t, _ in flows.values())
+    today_returned = sum(r for _, r in flows.values())
+    total_moves = today_taken + today_returned
+
+    rebalance: list[dict] = []
+    at_risk = 0
+    nets: list[dict] = []
+    for s in snapshot:
+        sid = s["station_id"]
+        taken, returned = flows.get(sid, (0, 0))
+        moves = taken + returned
+        net = returned - taken
+        if net:
+            nets.append({"station_id": sid, "name": s["name"], "net": net,
+                         "taken": taken, "returned": returned,
+                         "lat": s["lat"], "lon": s["lon"]})
+
+        out_of_order = not s["is_installed"] or not (s["is_renting"] or s["is_returning"])
+        empty = s["is_installed"] and s["is_renting"] and s["bikes_available"] == 0
+        full = s["is_installed"] and s["is_returning"] and s["docks_available"] == 0
+        if out_of_order or empty or full:
+            at_risk += moves
+        if empty or full:
+            rebalance.append({
+                "station_id": sid, "name": s["name"],
+                "lat": s["lat"], "lon": s["lon"],
+                "state": "vide" if empty else "pleine",
+                "moves": moves, "capacity": s["capacity"],
+                "bikes": s["bikes_available"], "docks": s["docks_available"],
+            })
+
+    rebalance.sort(key=lambda x: x["moves"], reverse=True)
+    nets.sort(key=lambda x: x["net"], reverse=True)
+    sinks = [n for n in nets if n["net"] > 0][:8]
+    sources = sorted((n for n in nets if n["net"] < 0), key=lambda x: x["net"])[:8]
+
+    return {
+        "now": int(time.time()),
+        "today_taken": today_taken,
+        "today_returned": today_returned,
+        "total_moves": total_moves,
+        "at_risk_moves": at_risk,
+        # Σ|flux net| / 2 : le volume minimal de vélos à déplacer pour
+        # ramener chaque station à son niveau du matin.
+        "to_move": sum(abs(n["net"]) for n in nets) // 2,
+        "rebalance": rebalance[:12],
+        "sinks": sinks,
+        "sources": sources,
     }
 
 

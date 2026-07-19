@@ -42,8 +42,9 @@ class ActivityAggregator:
         self._lock = threading.Lock()
         # bucket epoch (minute) -> [events, taken, returned]
         self._buckets: dict[int, list[int]] = defaultdict(lambda: [0, 0, 0])
-        # station_id -> |delta| cumulé du jour (pour le top stations)
-        self._stations: dict[int, int] = defaultdict(int)
+        # station_id -> [taken, returned] du jour : sert au top stations ET aux
+        # flux nets par station (puits/sources) de la vue métier.
+        self._stations: dict[int, list[int]] = defaultdict(lambda: [0, 0])
         self._day_start = local_midnight_epoch()
 
     def add(self, event: dict) -> None:
@@ -59,10 +60,10 @@ class ActivityAggregator:
             delta = event.get("bikes_delta", 0)
             if delta < 0:
                 b[1] += -delta
+                self._stations[event["station_id"]][0] += -delta
             elif delta > 0:
                 b[2] += delta
-            if delta:
-                self._stations[event["station_id"]] += abs(delta)
+                self._stations[event["station_id"]][1] += delta
 
     def series(self, step: int, since: int, until: int) -> list[dict]:
         """Les tranches [since, until] fusionnées à la granularité `step`.
@@ -90,8 +91,17 @@ class ActivityAggregator:
 
     def top_stations(self, n: int = 8) -> list[tuple[int, int]]:
         with self._lock:
-            ranked = sorted(self._stations.items(), key=lambda kv: kv[1], reverse=True)
+            ranked = sorted(
+                ((sid, t + r) for sid, (t, r) in self._stations.items()),
+                key=lambda kv: kv[1],
+                reverse=True,
+            )
         return ranked[:n]
+
+    def station_flows(self) -> dict[int, tuple[int, int]]:
+        """Flux du jour par station : {station_id: (pris, rendus)}."""
+        with self._lock:
+            return {sid: (t, r) for sid, (t, r) in self._stations.items()}
 
     @property
     def day_start(self) -> int:

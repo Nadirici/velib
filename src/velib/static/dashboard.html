@@ -363,6 +363,143 @@
       padding: 14px 0 4px;
     }
 
+    /* ---------- Onglet Indicateurs ---------- */
+    .kgroup {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 12px 0 6px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+    }
+
+    .kcard {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: var(--page);
+    }
+
+    .kcard .value {
+      font-size: 22px;
+      font-weight: 650;
+      line-height: 1.15;
+    }
+
+    .kcard .value.small {
+      font-size: 14.5px;
+      padding: 5px 0 3px;
+    }
+
+    .kcard .label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .kcard .sub {
+      font-size: 11px;
+      color: var(--ink-2);
+      margin-top: 2px;
+    }
+
+    .kbar {
+      display: flex;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      overflow: hidden;
+      margin-top: 7px;
+    }
+
+    .kbar i {
+      display: block;
+      height: 100%;
+    }
+
+    .kspark {
+      margin-top: 6px;
+    }
+
+    .kspark svg {
+      display: block;
+      width: 100%;
+    }
+
+    /* ---------- Onglet Métier ---------- */
+    .biz-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .biz-table th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      padding: 4px 10px 4px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .biz-table td {
+      padding: 4px 10px 4px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--ink-2);
+    }
+
+    .biz-table td:first-child {
+      color: var(--ink);
+    }
+
+    .biz-table td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .biz-table tbody tr {
+      cursor: pointer;
+    }
+
+    .biz-table tbody tr:hover td {
+      background: var(--border);
+    }
+
+    .bstate {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      padding: 1px 7px;
+      border-radius: 99px;
+      border: 1px solid currentColor;
+    }
+
+    .bstate.vide { color: var(--critical); }
+    .bstate.pleine { color: var(--warning); }
+
+    .price-input {
+      font: inherit;
+      font-size: 12px;
+      width: 64px;
+      padding: 2px 6px;
+      margin-top: 4px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .net-pos { color: var(--series-green); font-weight: 600; }
+    .net-neg { color: var(--critical); font-weight: 600; }
+
     /* ---------- Carte ---------- */
     #map {
       flex: 1;
@@ -512,10 +649,12 @@
   <section id="panel">
     <div class="panel-head">
       <div class="tabs">
-        <button id="tabLive" class="active">Aujourd'hui (direct)</button>
+        <button id="tabKpi" class="active">Indicateurs</button>
+        <button id="tabBiz">Métier</button>
+        <button id="tabLive">Aujourd'hui (direct)</button>
         <button id="tabHist">Historique (archives)</button>
       </div>
-      <div class="gran" id="granBtns">
+      <div class="gran" id="granBtns" style="display:none">
         <button data-step="60">1 min</button>
         <button data-step="300" class="active">5 min</button>
         <button data-step="900">15 min</button>
@@ -523,7 +662,147 @@
       </div>
     </div>
 
-    <div id="viewLive">
+    <div id="viewKpi">
+      <div class="kgroup">État du réseau — instantané</div>
+      <div class="kpi-grid">
+        <div class="kcard">
+          <div class="value" id="kpFill">–</div>
+          <div class="label">taux de remplissage du réseau</div>
+          <div class="sub" id="kpFillSub"></div>
+          <div class="kbar"><i id="kpFillBar" style="background:var(--bikes-3)"></i></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpElec">–</div>
+          <div class="label">part de vélos électriques</div>
+          <div class="sub" id="kpElecSub"></div>
+          <div class="kbar">
+            <i id="kpElecBarE" style="background:var(--series-green)"></i>
+            <i id="kpElecBarM" style="background:var(--series-blue)"></i>
+          </div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpAvail">–</div>
+          <div class="label">stations où trouver un vélo</div>
+          <div class="sub" id="kpAvailSub"></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpTension">–</div>
+          <div class="label">stations sous tension</div>
+          <div class="sub">vides ou pleines — service dégradé</div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpOpen">–</div>
+          <div class="label">stations en service</div>
+          <div class="sub" id="kpOpenSub"></div>
+        </div>
+      </div>
+
+      <div class="kgroup">Activité du jour</div>
+      <div class="kpi-grid">
+        <div class="kcard">
+          <div class="value" id="kpRot">–</div>
+          <div class="label">rotations (pris + rendus)</div>
+          <div class="sub" id="kpRotSub"></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpNet">–</div>
+          <div class="label">flux net (rendus − pris)</div>
+          <div class="sub">positif : les vélos rentrent aux stations</div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpRate">–</div>
+          <div class="label">mouvements / min (15 dernières min)</div>
+          <div class="kspark" id="kpSpark"></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpPeak">–</div>
+          <div class="label">heure de pointe du jour</div>
+          <div class="sub" id="kpPeakSub"></div>
+        </div>
+        <div class="kcard">
+          <div class="value small" id="kpTopSt">–</div>
+          <div class="label">station la plus active</div>
+          <div class="sub" id="kpTopStSub"></div>
+        </div>
+      </div>
+
+      <div class="kgroup">Perspective (archives)</div>
+      <div class="kpi-grid">
+        <div class="kcard">
+          <div class="value" id="kpAvgRot">–</div>
+          <div class="label">rotations moyennes / jour archivé</div>
+          <div class="sub" id="kpAvgRotSub"></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="kpVsAvg">–</div>
+          <div class="label">aujourd'hui vs moyenne archivée</div>
+          <div class="sub" id="kpVsAvgSub"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="viewBiz" style="display:none">
+      <div class="kgroup">Vue exploitant — demande & revenus du jour</div>
+      <div class="kpi-grid">
+        <div class="kcard">
+          <div class="value" id="bzTrips">–</div>
+          <div class="label">courses servies (vélos pris)</div>
+          <div class="sub" id="bzTripsSub"></div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="bzRevenue">–</div>
+          <div class="label">revenu estimé — hypothèse de prix</div>
+          <div class="sub">paramètre (pas une donnée) — prix moyen / course :
+            <input type="number" id="bzPrice" class="price-input" value="1.00" step="0.10" min="0"> €
+          </div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="bzPerBike">–</div>
+          <div class="label">courses par vélo à quai</div>
+          <div class="sub">taux de rotation de la flotte</div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="bzProj">–</div>
+          <div class="label">projection fin de journée</div>
+          <div class="sub" id="bzProjSub"></div>
+        </div>
+      </div>
+
+      <div class="kgroup">Exploitation — rééquilibrage</div>
+      <div class="kpi-grid">
+        <div class="kcard">
+          <div class="value" id="bzToMove">–</div>
+          <div class="label">vélos à repositionner</div>
+          <div class="sub">Σ |flux net par station| ÷ 2</div>
+        </div>
+        <div class="kcard">
+          <div class="value" id="bzRisk">–</div>
+          <div class="label">demande sur stations en défaut</div>
+          <div class="sub" id="bzRiskSub"></div>
+        </div>
+      </div>
+
+      <div class="panel-body" style="margin-top:10px">
+        <div class="chart-col">
+          <div class="chart-title">Priorités de rééquilibrage — stations en défaut, triées par la demande qu'elles portent (clic = voir sur la carte)</div>
+          <table class="biz-table">
+            <thead>
+              <tr><th>Station</th><th>État</th><th>Mvts jour</th><th>Vélos</th><th>Bornettes</th></tr>
+            </thead>
+            <tbody id="bzRebalance"></tbody>
+          </table>
+          <div class="empty-note" id="bzRebalanceEmpty" style="display:none">Aucune station en défaut en ce moment 🎉</div>
+        </div>
+        <div class="toplist">
+          <div class="chart-title">Puits — les vélos s'y accumulent (flux net +)</div>
+          <div id="bzSinks"></div>
+          <div class="chart-title" style="margin-top:10px">Sources — elles se vident (flux net −)</div>
+          <div id="bzSources"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="viewLive" style="display:none">
       <div class="kpis">
         <div class="tile">
           <div class="value" id="kEvents">–</div>
@@ -823,7 +1102,7 @@
     loadSnapshot().then(connectStream);
 
     /* ================== Panneau BI ================== */
-    let panelOpen = false, biTab = "live", step = 300;
+    let panelOpen = false, biTab = "kpi", step = 300;
     let actPoints = new Map();
     let dayStart = null;
     let kpi = { events: 0, taken: 0, returned: 0 };
@@ -867,13 +1146,267 @@
       if (s.bikes_delta < 0) { p.taken += -s.bikes_delta; kpi.taken += -s.bikes_delta; }
       else if (s.bikes_delta > 0) { p.returned += s.bikes_delta; kpi.returned += s.bikes_delta; }
       actPoints.set(t, p);
+      // Tranches minute des KPIs : entretenues en parallèle, quelle que soit
+      // la granularité choisie dans l'onglet « direct ».
+      const tm = Math.floor(s.ts / 60) * 60;
+      const pm = minutePoints.get(tm) || { t: tm, events: 0, taken: 0, returned: 0 };
+      pm.events++;
+      if (s.bikes_delta < 0) pm.taken += -s.bikes_delta;
+      else if (s.bikes_delta > 0) pm.returned += s.bikes_delta;
+      minutePoints.set(tm, pm);
       if (panelOpen && biTab === "live") { renderKpis(); scheduleLiveChart(); }
+      if (panelOpen && biTab === "kpi") scheduleKpis();
+      if (panelOpen && biTab === "biz") scheduleBiz();
     }
 
     let liveChartTimer = null;
     function scheduleLiveChart() {
       if (liveChartTimer) return;
       liveChartTimer = setTimeout(function () { liveChartTimer = null; renderLiveChart(); }, 400);
+    }
+
+    /* ================== Onglet Métier (vue exploitant) ================== */
+    let bizData = null, bizProfile = null, bizPrice = 1.00, bizTimer = null;
+
+    function scheduleBiz() {
+      // Les événements arrivent par vagues (~1/min) : on regroupe le refetch.
+      if (bizTimer) return;
+      bizTimer = setTimeout(function () { bizTimer = null; loadBizTab(); }, 3000);
+    }
+
+    async function loadBizTab() {
+      bizData = await (await fetch("/api/business")).json();
+      if (bizProfile == null) {
+        try {
+          const p = await (await fetch("/api/history/profile")).json();
+          bizProfile = (p.hours && p.hours.length) ? p.hours : false;
+        } catch (err) { bizProfile = false; }
+      }
+      renderBizTab();
+    }
+
+    function renderBizTab() {
+      if (biTab !== "biz" || !bizData) return;
+      const d = bizData;
+
+      document.getElementById("bzTrips").textContent = fmtN(d.today_taken);
+      document.getElementById("bzTripsSub").textContent =
+        fmtN(d.today_returned) + " vélos rendus en face";
+      document.getElementById("bzRevenue").textContent =
+        fmtN(Math.round(d.today_taken * bizPrice)) + " €";
+
+      let fleet = 0;
+      for (const s of stations.values()) fleet += s.bikes_available || 0;
+      document.getElementById("bzPerBike").textContent =
+        fleet ? (d.today_taken / fleet).toFixed(2).replace(".", ",") : "–";
+
+      /* Projection fin de journée : la part de la demande quotidienne déjà
+         écoulée à cette heure-ci, d'après le profil horaire moyen archivé. */
+      const projEl = document.getElementById("bzProj");
+      const projSub = document.getElementById("bzProjSub");
+      if (bizProfile && bizProfile.length) {
+        const nowH = new Date().getHours() + new Date().getMinutes() / 60;
+        let done = 0, totalDay = 0;
+        for (const h of bizProfile) {
+          totalDay += h.taken;
+          if (h.hour + 1 <= nowH) done += h.taken;
+          else if (h.hour < nowH) done += h.taken * (nowH - h.hour);
+        }
+        const share = totalDay ? done / totalDay : 0;
+        if (share > 0.05) {
+          projEl.textContent = "≈ " + fmtN(Math.round(d.today_taken / share)) + " courses";
+          projSub.textContent = pct(share) + " de la journée type déjà écoulée";
+        } else {
+          projEl.textContent = "–";
+          projSub.textContent = "trop tôt pour projeter";
+        }
+      } else {
+        projEl.textContent = "–";
+        projSub.textContent = "nécessite des archives (lance l'archiveur)";
+      }
+
+      document.getElementById("bzToMove").textContent = fmtN(d.to_move);
+      document.getElementById("bzRisk").textContent =
+        d.total_moves ? pct(d.at_risk_moves / d.total_moves) : "–";
+      document.getElementById("bzRiskSub").textContent =
+        fmtN(d.rebalance.length) + " station(s) en défaut listée(s)";
+
+      const tbody = document.getElementById("bzRebalance");
+      document.getElementById("bzRebalanceEmpty").style.display =
+        d.rebalance.length ? "none" : "block";
+      tbody.innerHTML = d.rebalance.map(function (s) {
+        return '<tr data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-id="' + s.station_id + '">' +
+          '<td>' + s.name + '</td>' +
+          '<td><span class="bstate ' + s.state + '">' + s.state.toUpperCase() + '</span></td>' +
+          '<td class="num">' + fmtN(s.moves) + '</td>' +
+          '<td class="num">' + s.bikes + '</td>' +
+          '<td class="num">' + s.docks + '</td></tr>';
+      }).join("");
+
+      const flowRow = function (s) {
+        const cls = s.net > 0 ? "net-pos" : "net-neg";
+        const sign = s.net > 0 ? "+" : "";
+        return '<div class="row"><span>' + s.name + '</span><b class="' + cls + '">' +
+          sign + fmtN(s.net) + '</b></div>';
+      };
+      document.getElementById("bzSinks").innerHTML =
+        d.sinks.length ? d.sinks.map(flowRow).join("") : '<div class="empty-note">—</div>';
+      document.getElementById("bzSources").innerHTML =
+        d.sources.length ? d.sources.map(flowRow).join("") : '<div class="empty-note">—</div>';
+    }
+
+    document.getElementById("bzPrice").addEventListener("input", function (e) {
+      bizPrice = Number(e.target.value) || 0;
+      renderBizTab();
+    });
+
+    /* Clic sur une ligne de rééquilibrage → zoom carte + popup */
+    document.getElementById("bzRebalance").addEventListener("click", function (e) {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      map.flyTo([Number(tr.dataset.lat), Number(tr.dataset.lon)], 16, { duration: 0.8 });
+      const mk = markers.get(Number(tr.dataset.id));
+      if (mk) mk.openPopup();
+    });
+
+    /* ================== Onglet Indicateurs (KPIs) ================== */
+    /* Deux familles : l'instantané (calculé sur la photo `stations`, donc mis
+       à jour par chaque événement SSE) et l'activité du jour (tranches d'une
+       minute entretenues en parallèle de l'onglet direct). */
+    let minutePoints = new Map();   // t (minute) -> {events, taken, returned}
+    let kpiTop = [];
+    let histDays = null;            // résumé des archives Parquet
+    let kpiTimer = null;
+
+    function scheduleKpis() {
+      if (kpiTimer) return;
+      kpiTimer = setTimeout(function () { kpiTimer = null; renderKpiTab(); }, 400);
+    }
+
+    async function loadKpiTab() {
+      const r = await (await fetch("/api/activity?step=60")).json();
+      dayStart = r.day_start;
+      minutePoints = new Map(r.points.map((p) => [p.t, p]));
+      kpiTop = r.top;
+      try {
+        const d = await (await fetch("/api/history/daily")).json();
+        histDays = d.days && d.days.length ? d.days : null;
+      } catch (err) { histDays = null; }
+      renderKpiTab();
+    }
+
+    function pct(x) { return (100 * x).toFixed(1).replace(".", ",") + " %"; }
+
+    function drawSpark(box, values) {
+      const n = values.length;
+      if (!n) { box.innerHTML = ""; return; }
+      const W = Math.max(box.clientWidth || 0, 160), H = 34;
+      const vmax = Math.max(5, ...values);
+      const X = (i) => 2 + (i / (n - 1)) * (W - 8);
+      const Y = (v) => H - 3 - (v / vmax) * (H - 8);
+      const blue = cssVar("--series-blue");
+      const pts = values.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join("L");
+      box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '">' +
+        '<path d="M' + pts + '" fill="none" stroke="' + blue + '" stroke-width="1.5"/>' +
+        '<circle cx="' + X(n - 1) + '" cy="' + Y(values[n - 1]) + '" r="2.5" fill="' + blue + '"/>' +
+        '</svg>';
+    }
+
+    function renderKpiTab() {
+      if (biTab !== "kpi") return;
+
+      /* --- État instantané (photo stations) --- */
+      let bikes = 0, mech = 0, ebike = 0, cap = 0, open = 0, total = 0,
+        withBike = 0, empty = 0, full = 0;
+      for (const s of stations.values()) {
+        total++;
+        if (!(s.is_installed && s.is_renting)) continue;
+        open++;
+        bikes += s.bikes_available || 0;
+        mech += s.mechanical || 0;
+        ebike += s.ebike || 0;
+        cap += s.capacity || 0;
+        if (s.bikes_available > 0) withBike++; else empty++;
+        if (s.is_returning && s.docks_available === 0) full++;
+      }
+      const fill = cap ? bikes / cap : 0;
+      document.getElementById("kpFill").textContent = pct(fill);
+      document.getElementById("kpFillSub").textContent =
+        fmtN(bikes) + " vélos pour " + fmtN(cap) + " bornettes";
+      document.getElementById("kpFillBar").style.width = (100 * fill) + "%";
+
+      const elec = (mech + ebike) ? ebike / (mech + ebike) : 0;
+      document.getElementById("kpElec").textContent = pct(elec);
+      document.getElementById("kpElecSub").textContent =
+        fmtN(ebike) + " électriques · " + fmtN(mech) + " mécaniques";
+      document.getElementById("kpElecBarE").style.width = (100 * elec) + "%";
+      document.getElementById("kpElecBarM").style.width = (100 * (1 - elec)) + "%";
+
+      document.getElementById("kpAvail").textContent = open ? pct(withBike / open) : "–";
+      document.getElementById("kpAvailSub").textContent =
+        fmtN(empty) + " stations ouvertes sans vélo";
+      document.getElementById("kpTension").textContent = fmtN(empty + full);
+      document.getElementById("kpOpen").textContent = total ? pct(open / total) : "–";
+      document.getElementById("kpOpenSub").textContent =
+        fmtN(open) + " sur " + fmtN(total) + " stations";
+
+      /* --- Activité du jour (tranches minute) --- */
+      let taken = 0, returned = 0;
+      const hourly = new Map();
+      for (const p of minutePoints.values()) {
+        taken += p.taken; returned += p.returned;
+        const h = Math.floor(p.t / 3600) * 3600;
+        hourly.set(h, (hourly.get(h) || 0) + p.taken + p.returned);
+      }
+      document.getElementById("kpRot").textContent = fmtN(taken + returned);
+      document.getElementById("kpRotSub").textContent =
+        fmtN(taken) + " pris · " + fmtN(returned) + " rendus";
+      const net = returned - taken;
+      document.getElementById("kpNet").textContent = (net > 0 ? "+" : "") + fmtN(net);
+
+      const now = Math.floor(Date.now() / 1000 + clockOffset);
+      const nowMin = Math.floor(now / 60) * 60;
+      let last15 = 0;
+      const sparkVals = [];
+      for (let t = nowMin - 59 * 60; t <= nowMin; t += 60) {
+        const p = minutePoints.get(t);
+        const v = p ? p.taken + p.returned : 0;
+        sparkVals.push(v);
+        if (t > nowMin - 15 * 60) last15 += v;
+      }
+      document.getElementById("kpRate").textContent =
+        (last15 / 15).toFixed(1).replace(".", ",");
+      drawSpark(document.getElementById("kpSpark"), sparkVals);
+
+      let peakH = null, peakV = 0;
+      for (const [h, v] of hourly) if (v > peakV) { peakV = v; peakH = h; }
+      document.getElementById("kpPeak").textContent =
+        peakH == null ? "–" : new Date(peakH * 1000).getHours() + " h";
+      document.getElementById("kpPeakSub").textContent =
+        peakH == null ? "" : fmtN(peakV) + " mouvements dans l'heure";
+
+      if (kpiTop.length) {
+        document.getElementById("kpTopSt").textContent = kpiTop[0].name;
+        document.getElementById("kpTopStSub").textContent =
+          fmtN(kpiTop[0].moves) + " mouvements aujourd'hui";
+      }
+
+      /* --- Perspective (archives Parquet) --- */
+      if (histDays) {
+        const avg = histDays.reduce((a, d) => a + d.taken + d.returned, 0) / histDays.length;
+        document.getElementById("kpAvgRot").textContent = fmtN(Math.round(avg));
+        document.getElementById("kpAvgRotSub").textContent =
+          "sur " + histDays.length + " jour(s) archivé(s)";
+        document.getElementById("kpVsAvg").textContent = avg ? pct((taken + returned) / avg) : "–";
+        document.getElementById("kpVsAvgSub").textContent =
+          "d'une journée moyenne complète";
+      } else {
+        document.getElementById("kpAvgRot").textContent = "–";
+        document.getElementById("kpAvgRotSub").textContent =
+          "aucune archive — lance l'archiveur ce soir";
+        document.getElementById("kpVsAvg").textContent = "–";
+        document.getElementById("kpVsAvgSub").textContent = "";
+      }
     }
 
     /* ========== Utilitaires graphiques ========== */
@@ -1049,21 +1582,32 @@
       panelEl.classList.toggle("open", panelOpen);
       document.getElementById("panelBtn").classList.toggle("active", panelOpen);
       setTimeout(function () { map.invalidateSize(); }, 600);
-      if (panelOpen) {
-        if (biTab === "live") loadActivity(); else loadHistory();
-      }
+      if (panelOpen) loadBiTab();
     });
+
+    function loadBiTab() {
+      if (biTab === "kpi") loadKpiTab();
+      else if (biTab === "biz") loadBizTab();
+      else if (biTab === "live") loadActivity();
+      else loadHistory();
+    }
 
     function setBiTab(next) {
       biTab = next;
+      document.getElementById("tabKpi").classList.toggle("active", biTab === "kpi");
+      document.getElementById("tabBiz").classList.toggle("active", biTab === "biz");
       document.getElementById("tabLive").classList.toggle("active", biTab === "live");
       document.getElementById("tabHist").classList.toggle("active", biTab === "hist");
+      document.getElementById("viewKpi").style.display = biTab === "kpi" ? "block" : "none";
+      document.getElementById("viewBiz").style.display = biTab === "biz" ? "block" : "none";
       document.getElementById("viewLive").style.display = biTab === "live" ? "block" : "none";
       document.getElementById("viewHist").style.display = biTab === "hist" ? "block" : "none";
       document.getElementById("granBtns").style.display = biTab === "live" ? "flex" : "none";
-      if (biTab === "live") loadActivity(); else loadHistory();
+      loadBiTab();
     }
 
+    document.getElementById("tabKpi").addEventListener("click", function () { setBiTab("kpi"); });
+    document.getElementById("tabBiz").addEventListener("click", function () { setBiTab("biz"); });
     document.getElementById("tabLive").addEventListener("click", function () { setBiTab("live"); });
     document.getElementById("tabHist").addEventListener("click", function () { setBiTab("hist"); });
 
@@ -1085,7 +1629,10 @@
       clearTimeout(rsTimer);
       rsTimer = setTimeout(function () {
         if (!panelOpen) return;
-        if (biTab === "live") renderLiveChart(); else loadHistory();
+        if (biTab === "kpi") renderKpiTab();
+        else if (biTab === "biz") renderBizTab();
+        else if (biTab === "live") renderLiveChart();
+        else loadHistory();
       }, 200);
     });
 

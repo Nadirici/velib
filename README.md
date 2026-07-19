@@ -92,9 +92,12 @@ uv run python -m velib.dashboard
 ```
 
 Ouvre le dashboard sur **http://localhost:8000** :
-- **Carte Leaflet** avec les ~1 400 stations (couleur = remplissage, animation = événement en direct)
-- **KPIs** en bandeau : vélos disponibles, bornettes libres, stations vides/pleines/fermées
-- **Panneau BI** (bouton 📊 Activité) : graphiques d'activité du jour + historique
+- **Carte Leaflet** avec les ~1 500 stations (couleur = remplissage, animation « radar » = événement en direct, badge « EN DIRECT » reflétant l'état réel du flux)
+- **Stats** en bandeau : vélos disponibles, bornettes libres, stations vides/pleines/fermées
+- **Panneau BI** (bouton 📊 Activité), trois onglets :
+  - **Indicateurs** — KPIs instantanés (taux de remplissage, part électrique, stations sous tension, stations en service) et du jour (rotations, flux net, rythme/min avec sparkline, heure de pointe, station la plus active, comparaison à la moyenne archivée), tous mis à jour en direct par le flux SSE ;
+  - **Aujourd'hui (direct)** — courbe vélos pris/rendus du jour, granularité ajustable 1 min → 1 h, reconstruite depuis Kafka au démarrage du serveur et alimentée en continu ;
+  - **Historique (archives)** — requêtes DuckDB sur les Parquet : volumes par jour, profil horaire moyen (signature jour/nuit).
 
 ## Commandes utiles
 
@@ -163,3 +166,35 @@ velib/
 - **SSE** en continu : le backend relaie chaque événement Kafka aux navigateurs connectés
 - **Carte** : marqueurs circulaires (taille ∝ capacité, couleur = remplissage), animation « radar » sur chaque changement
 - **Panneau BI** : graphiques SVG faits à la main (sans librairie externe)
+
+## Décisions de conception
+
+- **Clé de partition = `station_id`** — Kafka ne garantit l'ordre qu'au sein d'une partition ;
+  avec la clé, tous les événements d'une même station restent ordonnés, ce qui rend `bikes_delta` fiable en aval.
+- **« Au moins une fois » + idempotence** — le consumer commit *après* traitement (aucune perte possible),
+  et les écritures Redis remplacent l'état complet : rejouer un événement est sans effet. Le couple
+  transforme la garantie faible de Kafka en résultat exact côté vue.
+- **Messages empoisonnés** — un événement inparsable est écarté et loggé (partition + offset) au lieu
+  de bloquer la partition à l'infini. Vécu en conditions réelles : un `stationCode: null` transitoire de
+  l'API, propagé à ~1 400 événements par la jointure du producer (le défaut de `dict.get()` ne couvre pas
+  les valeurs `null`).
+- **Event sourcing** — le journal Kafka est la seule source de vérité : la vue Redis comme l'activité du
+  jour du dashboard sont des projections jetables, reconstructibles par replay (`FLUSHDB` + reset des
+  offsets ; `offsets_for_times` à chaque démarrage du dashboard).
+- **Producer idempotent** (`enable.idempotence`, `acks=all`) — les retries réseau ne créent pas de doublons.
+- **Push plutôt que polling** — SSE (unidirectionnel, reconnexion native) plutôt que WebSocket ;
+  le navigateur ne redemande jamais rien, il resynchronise sa photo après une coupure.
+- **Couleurs de la carte** — pas de dégradé rouge→vert (indiscernable en cas de daltonisme) : rampes
+  séquentielles monochromes validées par un contrôle de contraste automatisé, rouge réservé au seul
+  état critique (station vide / pleine), gris pour les stations fermées.
+
+## Limites connues & pistes
+
+- Le store « état précédent » du producer est en mémoire : chaque redémarrage réémet un snapshot complet
+  (~1 500 événements à `bikes_delta=0`). Piste : `RedisStateStore` via le Protocol `PreviousStateStore` existant.
+- Le contrat de schéma est implicite (`to_json`/`parse_event`). Version industrielle : Avro + Schema
+  Registry, et une dead letter queue à la place du log d'écartement.
+- L'agrégation d'activité n'est pas idempotente en cas de replay partiel (tolérable pour des tendances).
+- L'archiveur se lance à la main — à planifier (Planificateur de tâches Windows / cron).
+- À venir : fenêtres glissantes sur `bikes_delta`, croisement météo (les horodatages sont volontairement
+  restés en epoch UTC pour ça), prédiction de disponibilité par station.
