@@ -379,9 +379,11 @@ def history_profile() -> dict:
                    sum(CASE WHEN bikes_delta < 0 THEN -bikes_delta ELSE 0 END) AS taken,
                    sum(CASE WHEN bikes_delta > 0 THEN  bikes_delta ELSE 0 END) AS returned
             FROM read_parquet('{_PARQUET_GLOB}', hive_partitioning = true)
+            WHERE bikes_delta != 0
             GROUP BY date, hour
         )
-        GROUP BY hour ORDER BY hour
+        GROUP BY hour
+        ORDER BY hour
     """).fetchall()
     return {"hours": [{"hour": h, "taken": t, "returned": r} for h, t, r in rows]}
 
