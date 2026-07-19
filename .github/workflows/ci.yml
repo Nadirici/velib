@@ -15,8 +15,12 @@ name: CI/CD
 on:
   push:
     branches: [main, dev]
+    # Un changement purement documentaire ne relance ni les tests ni le
+    # déploiement (README différent entre dev et main, notamment).
+    paths-ignore: ["**.md", "docs/**"]
   pull_request:
     branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
 
 jobs:
   tests:
