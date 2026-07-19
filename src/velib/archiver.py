@@ -1,27 +1,13 @@
 """Couche batch de la BI : archive les événements d'une journée en Parquet.
 
-Architecture lambda, versant « batch layer » : chaque soir (ou à la demande),
-ce job relit dans le journal Kafka la totalité des événements d'une journée
-et les fige en un fichier Parquet partitionné par date :
+Relit la journée complète depuis le journal Kafka et la fige en
+`data/events/date=YYYY-MM-DD/events.parquet` (partitionnement Hive, requêté
+ensuite par DuckDB). Lecture par `offsets_for_times` + `assign()` — position
+explicite, sans group.id ni commit : le job est idempotent et sans trace côté
+Kafka.
 
-    data/events/date=2026-07-19/events.parquet
-
-Pourquoi Parquet : format colonne compressé, LE standard analytique — DuckDB
-requête ensuite `data/events/*/*.parquet` en SQL directement (le répertoire
-`date=...` est reconnu comme partition Hive, la colonne `date` apparaît toute
-seule). Pourquoi depuis Kafka : le journal est la source de vérité ; ce job
-est idempotent (le relancer réécrit le même fichier) et indépendant de Redis.
-
-Mécanique Kafka à connaître : `offsets_for_times` — le broker indexe les
-messages par horodatage et sait répondre « le premier offset ≥ minuit ». On
-borne ainsi la journée [minuit, minuit+24h) partition par partition, sans
-group.id ni commit : lecture par `assign()` (position explicite), pas
-d'abonnement dynamique.
-
-Usage :
-    uv run python -m velib.archiver               → archive HIER
-    uv run python -m velib.archiver 2026-07-19    → archive une date précise
-    (à planifier chaque soir : Planificateur de tâches Windows / cron)
+    python -m velib.archiver               # archive la veille
+    python -m velib.archiver 2026-07-19    # archive une date précise
 """
 
 from __future__ import annotations

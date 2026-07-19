@@ -1,1182 +1,4 @@
-<!doctype html>
-<html lang="fr">
-
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vélib' — état du réseau</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-  <style>
-    :root {
-      color-scheme: light;
-      --page: #f9f9f7;
-      --surface: #fcfcfb;
-      --ink: #0b0b0b;
-      --ink-2: #52514e;
-      --muted: #898781;
-      --border: rgba(11, 11, 11, 0.10);
-      --bikes-1: #86b6ef;
-      --bikes-2: #5598e7;
-      --bikes-3: #2a78d6;
-      --bikes-4: #184f95;
-      --docks-1: #7cc47c;
-      --docks-2: #4aae4a;
-      --docks-3: #189318;
-      --docks-4: #005e00;
-      --series-blue: #2a78d6;
-      --series-green: #008300;
-      --critical: #d03b3b;
-      --good: #0ca30c;
-      --warning: #fab219;
-      --closed: #898781;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        color-scheme: dark;
-        --page: #0d0d0d;
-        --surface: #1a1a19;
-        --ink: #ffffff;
-        --ink-2: #c3c2b7;
-        --muted: #898781;
-        --border: rgba(255, 255, 255, 0.10);
-        --series-blue: #3987e5;
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-    }
-
-    html,
-    body {
-      height: 100%;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page);
-      color: var(--ink);
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* ---------- Bandeau ---------- */
-    header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 10px 16px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px 20px;
-    }
-
-    .brand h1 {
-      font-size: 16px;
-      font-weight: 650;
-    }
-
-    .freshness {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: var(--ink-2);
-    }
-
-    .live {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .07em;
-      color: var(--good);
-    }
-
-    .live .beacon {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--good);
-      animation: beacon 2s ease-out infinite;
-    }
-
-    @keyframes beacon {
-      0% {
-        box-shadow: 0 0 0 0 rgba(12, 163, 12, .45);
-      }
-
-      70% {
-        box-shadow: 0 0 0 9px rgba(12, 163, 12, 0);
-      }
-
-      100% {
-        box-shadow: 0 0 0 0 rgba(12, 163, 12, 0);
-      }
-    }
-
-    .live.stale {
-      color: var(--warning);
-    }
-
-    .live.stale .beacon {
-      background: var(--warning);
-      animation: none;
-    }
-
-    .live.off {
-      color: var(--critical);
-    }
-
-    .live.off .beacon {
-      background: var(--critical);
-      animation: none;
-    }
-
-    .stats {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-
-    .tile {
-      min-width: 76px;
-    }
-
-    .tile .value {
-      font-size: 20px;
-      font-weight: 650;
-      line-height: 1.1;
-    }
-
-    .tile .label {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .tile .sub {
-      font-size: 11px;
-      color: var(--ink-2);
-    }
-
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-left: auto;
-      flex-wrap: wrap;
-    }
-
-    .mode {
-      display: flex;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .mode button {
-      font: inherit;
-      font-size: 12.5px;
-      padding: 6px 12px;
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      color: var(--ink-2);
-    }
-
-    .mode button.active {
-      background: var(--ink);
-      color: var(--surface);
-      font-weight: 600;
-    }
-
-    #search {
-      font: inherit;
-      font-size: 13px;
-      padding: 6px 10px;
-      width: 210px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--page);
-      color: var(--ink);
-    }
-
-    #search::placeholder {
-      color: var(--muted);
-    }
-
-    /* ---------- Recherche (autocomplétion) ---------- */
-    .search-wrap {
-      position: relative;
-    }
-
-    .search-results {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      width: 300px;
-      max-height: 320px;
-      overflow-y: auto;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
-      z-index: 1200;
-      display: none;
-    }
-
-    .search-results.open {
-      display: block;
-    }
-
-    .search-item {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 7px 10px;
-      cursor: pointer;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .search-item:last-child {
-      border-bottom: none;
-    }
-
-    .search-item.active,
-    .search-item:hover {
-      background: var(--border);
-    }
-
-    .search-item .si-name {
-      font-size: 12.5px;
-      color: var(--ink);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .search-item .si-arr {
-      font-size: 10.5px;
-      color: var(--muted);
-    }
-
-    .search-item .si-count {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink-2);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-
-    .search-empty {
-      padding: 9px 10px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    /* ---------- Onglet Arrondissements ---------- */
-    .arr-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .arr-table th {
-      text-align: left;
-      font-weight: 600;
-      font-size: 10.5px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted);
-      padding: 4px 10px 4px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .arr-table td {
-      padding: 5px 10px 5px 0;
-      border-bottom: 1px solid var(--border);
-      color: var(--ink-2);
-    }
-
-    .arr-table td:first-child {
-      color: var(--ink);
-      font-weight: 600;
-    }
-
-    .arr-table td.num {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .arr-table tbody tr {
-      cursor: pointer;
-    }
-
-    .arr-table tbody tr:hover td {
-      background: var(--border);
-    }
-
-    .arr-fill {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 120px;
-    }
-
-    .arr-fill .track {
-      flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--border);
-      overflow: hidden;
-    }
-
-    .arr-fill .track i {
-      display: block;
-      height: 100%;
-      background: var(--bikes-3);
-    }
-
-    /* ---------- Onglet Arrondissements : carte + détail ---------- */
-    .arr-layout {
-      display: flex;
-      gap: 16px;
-      align-items: stretch;
-      flex-wrap: wrap;
-    }
-
-    .arr-map-col {
-      flex: 1 1 480px;
-      min-width: 300px;
-    }
-
-    #arrChoro {
-      margin-top: 6px;
-    }
-
-    #arrChoro svg {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    #arrChoro path {
-      transition: stroke-width .1s;
-    }
-
-    #arrChoro path:hover {
-      stroke: var(--ink);
-      stroke-width: 2;
-    }
-
-    .arr-detail {
-      flex: 0 0 300px;
-      max-width: 340px;
-    }
-
-    .arr-bubble {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      font-weight: 700;
-      color: #fff;
-      border: 2px solid rgba(255, 255, 255, .9);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
-      cursor: pointer;
-    }
-
-    .arr-bubble.selected {
-      outline: 3px solid var(--ink);
-      outline-offset: 1px;
-    }
-
-    /* Bulles de cluster sur la carte principale (arrondissements + banlieue) */
-    .cluster-bubble {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      font-weight: 700;
-      color: #fff;
-      border: 2px solid rgba(255, 255, 255, .9);
-      box-shadow: 0 1px 5px rgba(0, 0, 0, .4);
-      cursor: pointer;
-    }
-
-    .cluster-bubble.banlieue {
-      border-style: dashed;
-    }
-
-    .arr-legend {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 6px;
-    }
-
-    .arr-legend .ramp {
-      height: 8px;
-      width: 120px;
-      border-radius: 4px;
-      background: linear-gradient(90deg, #2a78d6, #b061a0, #d03b3b);
-    }
-
-    .arr-detail .dtitle {
-      font-size: 15px;
-      font-weight: 650;
-      margin-bottom: 2px;
-    }
-
-    .arr-detail .dsub {
-      font-size: 11.5px;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }
-
-    .arr-detail .drow {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 5px 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
-      color: var(--ink-2);
-    }
-
-    .arr-detail .drow b {
-      color: var(--ink);
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* ---------- Panneau BI ---------- */
-    .panel-btn {
-      font: inherit;
-      font-size: 12.5px;
-      padding: 6px 12px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--ink-2);
-    }
-
-    .panel-btn.active {
-      background: var(--ink);
-      color: var(--surface);
-      font-weight: 600;
-    }
-
-    #panel {
-      background: var(--surface);
-      padding: 10px 16px 14px;
-      display: none;
-    }
-
-    /* Ouvert : le panneau prend TOUTE la hauteur restante (la carte est
-       masquée en JS) et défile si le contenu déborde. La carte n'étant plus
-       rendue, on gagne en fluidité pendant l'analyse. */
-    #panel.open {
-      display: flex;
-      flex-direction: column;
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y: auto;
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
-      margin-bottom: 8px;
-    }
-
-    .tabs,
-    .gran {
-      display: flex;
-      gap: 4px;
-    }
-
-    .tabs button,
-    .gran button {
-      font: inherit;
-      font-size: 11.5px;
-      padding: 4px 10px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--ink-2);
-    }
-
-    .tabs button.active,
-    .gran button.active {
-      background: var(--ink);
-      color: var(--surface);
-      border-color: var(--ink);
-      font-weight: 600;
-    }
-
-    .kpis {
-      display: flex;
-      gap: 22px;
-      flex-wrap: wrap;
-      margin: 4px 0 10px;
-    }
-
-    .panel-body {
-      display: flex;
-      gap: 22px;
-      align-items: stretch;
-      flex-wrap: wrap;
-    }
-
-    .chart-col {
-      flex: 1;
-      min-width: 280px;
-    }
-
-    .chart-title {
-      font-size: 11.5px;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
-
-    .chart-legend {
-      display: flex;
-      gap: 14px;
-      font-size: 11.5px;
-      color: var(--ink-2);
-      margin-bottom: 2px;
-    }
-
-    .chart-legend .lswatch {
-      display: inline-block;
-      width: 12px;
-      height: 3px;
-      border-radius: 2px;
-      margin-right: 5px;
-      vertical-align: 3px;
-    }
-
-    .chart-box {
-      position: relative;
-    }
-
-    .chart-box svg {
-      display: block;
-      width: 100%;
-    }
-
-    /* Rectangle de sélection du zoom (glisser sur la courbe) */
-    .chart-sel {
-      position: absolute;
-      top: 10px;
-      height: 138px;
-      background: rgba(42, 120, 214, 0.16);
-      border-left: 1px solid var(--series-blue);
-      border-right: 1px solid var(--series-blue);
-      pointer-events: none;
-      display: none;
-    }
-
-    /* Bouton de réinitialisation du zoom (visible quand zoomé) */
-    .chart-reset {
-      position: absolute;
-      top: 4px;
-      right: 6px;
-      width: 22px;
-      height: 22px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 6px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--ink-2);
-      font-size: 13px;
-      cursor: pointer;
-      z-index: 5;
-    }
-
-    .chart-reset:hover {
-      color: var(--ink);
-    }
-
-    .chart-tip {
-      position: absolute;
-      pointer-events: none;
-      display: none;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 8px;
-      font-size: 11.5px;
-      color: var(--ink);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, .15);
-      white-space: nowrap;
-      z-index: 10;
-    }
-
-    .toplist {
-      min-width: 230px;
-      max-width: 300px;
-      font-size: 12px;
-      color: var(--ink-2);
-    }
-
-    .toplist .row {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 2px 0;
-    }
-
-    .toplist .row b {
-      color: var(--ink);
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .empty-note {
-      font-size: 12.5px;
-      color: var(--muted);
-      padding: 14px 0 4px;
-    }
-
-    /* ---------- Onglet Indicateurs ---------- */
-    .kgroup {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin: 12px 0 6px;
-    }
-
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-      gap: 10px;
-    }
-
-    .kcard {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: var(--page);
-    }
-
-    .kcard .value {
-      font-size: 22px;
-      font-weight: 650;
-      line-height: 1.15;
-    }
-
-    .kcard .value.small {
-      font-size: 14.5px;
-      padding: 5px 0 3px;
-    }
-
-    .kcard .label {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .kcard .sub {
-      font-size: 11px;
-      color: var(--ink-2);
-      margin-top: 2px;
-    }
-
-    .kbar {
-      display: flex;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--border);
-      overflow: hidden;
-      margin-top: 7px;
-    }
-
-    .kbar i {
-      display: block;
-      height: 100%;
-    }
-
-    .kspark {
-      margin-top: 6px;
-    }
-
-    .kspark svg {
-      display: block;
-      width: 100%;
-    }
-
-    /* ---------- Onglet Métier ---------- */
-    .biz-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .biz-table th {
-      text-align: left;
-      font-weight: 600;
-      font-size: 10.5px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted);
-      padding: 4px 10px 4px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .biz-table td {
-      padding: 4px 10px 4px 0;
-      border-bottom: 1px solid var(--border);
-      color: var(--ink-2);
-    }
-
-    .biz-table td:first-child {
-      color: var(--ink);
-    }
-
-    .biz-table td.num {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .biz-table tbody tr {
-      cursor: pointer;
-    }
-
-    .biz-table tbody tr:hover td {
-      background: var(--border);
-    }
-
-    .bstate {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .05em;
-      padding: 1px 7px;
-      border-radius: 99px;
-      border: 1px solid currentColor;
-    }
-
-    .bstate.vide { color: var(--critical); }
-    .bstate.pleine { color: var(--warning); }
-
-    .price-input {
-      font: inherit;
-      font-size: 12px;
-      width: 64px;
-      padding: 2px 6px;
-      margin-top: 4px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--ink);
-    }
-
-    .net-pos { color: var(--series-green); font-weight: 600; }
-    .net-neg { color: var(--critical); font-weight: 600; }
-
-    /* ---------- Carte ---------- */
-    #map {
-      flex: 1;
-      min-height: 0;
-    }
-
-    .legend {
-      background: var(--surface);
-      color: var(--ink-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 11.5px;
-      line-height: 1.7;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
-    }
-
-    .legend .swatch {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      margin-right: 6px;
-      vertical-align: -1px;
-    }
-
-    .legend .title {
-      font-weight: 600;
-      color: var(--ink);
-      margin-bottom: 2px;
-    }
-
-    /* ---------- Popup ---------- */
-    .leaflet-popup-content-wrapper,
-    .leaflet-popup-tip {
-      background: var(--surface);
-      color: var(--ink);
-    }
-
-    .leaflet-popup-content {
-      margin: 12px 14px;
-      font: 13px/1.5 system-ui, sans-serif;
-    }
-
-    .popup h3 {
-      font-size: 14px;
-      margin-bottom: 1px;
-    }
-
-    .popup .code {
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-
-    .popup table {
-      border-collapse: collapse;
-    }
-
-    .popup td {
-      padding: 1px 0;
-    }
-
-    .popup td:first-child {
-      color: var(--ink-2);
-      padding-right: 14px;
-    }
-
-    .popup td:last-child {
-      font-variant-numeric: tabular-nums;
-      text-align: right;
-    }
-
-    .popup .bar {
-      height: 6px;
-      border-radius: 3px;
-      background: var(--border);
-      margin: 8px 0 4px;
-      overflow: hidden;
-      display: flex;
-    }
-
-    .popup .bar i {
-      display: block;
-      height: 100%;
-    }
-
-    .popup .status {
-      margin-top: 6px;
-      font-size: 12px;
-    }
-
-    .popup .delta {
-      color: var(--muted);
-      font-size: 11.5px;
-      margin-top: 4px;
-    }
-  </style>
-</head>
-
-<body>
-
-  <header>
-    <div class="brand">
-      <h1>Vélib' — état du réseau</h1>
-      <div class="freshness">
-        <span class="live" id="liveBadge"><span class="beacon"></span><span id="liveLabel">CONNEXION…</span></span>
-        <span id="freshText"></span>
-      </div>
-    </div>
-
-    <div class="stats">
-      <div class="tile">
-        <div class="value" id="stBikes">–</div>
-        <div class="label">vélos disponibles</div>
-        <div class="sub" id="stBikesSub"></div>
-      </div>
-      <div class="tile">
-        <div class="value" id="stDocks">–</div>
-        <div class="label">bornettes libres</div>
-      </div>
-      <div class="tile">
-        <div class="value" id="stEmpty">–</div>
-        <div class="label">stations vides</div>
-      </div>
-      <div class="tile">
-        <div class="value" id="stFull">–</div>
-        <div class="label">stations pleines</div>
-      </div>
-      <div class="tile">
-        <div class="value" id="stClosed">–</div>
-        <div class="label">fermées</div>
-      </div>
-    </div>
-
-    <div class="controls">
-      <div class="search-wrap">
-        <input id="search" autocomplete="off" placeholder="Chercher une station…">
-        <div id="searchResults" class="search-results"></div>
-      </div>
-      <div class="mode">
-        <button id="modeBikes" class="active">Trouver un vélo</button>
-        <button id="modeDocks">Rendre un vélo</button>
-      </div>
-      <button id="panelBtn" class="panel-btn">📊 Activité</button>
-    </div>
-  </header>
-
-  <section id="panel">
-    <div class="panel-head">
-      <div class="tabs">
-        <button id="tabKpi" class="active">Indicateurs</button>
-        <button id="tabArr">Arrondissements</button>
-        <button id="tabBiz">Métier</button>
-        <button id="tabLive">Aujourd'hui (direct)</button>
-        <button id="tabHist">Historique (archives)</button>
-      </div>
-      <div class="gran" id="granBtns" style="display:none">
-        <button data-step="60">1 min</button>
-        <button data-step="300" class="active">5 min</button>
-        <button data-step="900">15 min</button>
-        <button data-step="3600">1 h</button>
-      </div>
-    </div>
-
-    <div id="viewKpi">
-      <div class="kgroup">État du réseau — instantané</div>
-      <div class="kpi-grid">
-        <div class="kcard">
-          <div class="value" id="kpFill">–</div>
-          <div class="label">taux de remplissage du réseau</div>
-          <div class="sub" id="kpFillSub"></div>
-          <div class="kbar"><i id="kpFillBar" style="background:var(--bikes-3)"></i></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpElec">–</div>
-          <div class="label">part de vélos électriques</div>
-          <div class="sub" id="kpElecSub"></div>
-          <div class="kbar">
-            <i id="kpElecBarE" style="background:var(--series-green)"></i>
-            <i id="kpElecBarM" style="background:var(--series-blue)"></i>
-          </div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpAvail">–</div>
-          <div class="label">stations où trouver un vélo</div>
-          <div class="sub" id="kpAvailSub"></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpTension">–</div>
-          <div class="label">stations sous tension</div>
-          <div class="sub">vides ou pleines — service dégradé</div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpOpen">–</div>
-          <div class="label">stations en service</div>
-          <div class="sub" id="kpOpenSub"></div>
-        </div>
-      </div>
-
-      <div class="kgroup">Activité du jour</div>
-      <div class="kpi-grid">
-        <div class="kcard">
-          <div class="value" id="kpRot">–</div>
-          <div class="label">rotations (pris + rendus)</div>
-          <div class="sub" id="kpRotSub"></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpNet">–</div>
-          <div class="label">flux net (rendus − pris)</div>
-          <div class="sub">positif : les vélos rentrent aux stations</div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpRate">–</div>
-          <div class="label">mouvements / min (15 dernières min)</div>
-          <div class="kspark" id="kpSpark"></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpPeak">–</div>
-          <div class="label">heure de pointe du jour</div>
-          <div class="sub" id="kpPeakSub"></div>
-        </div>
-        <div class="kcard">
-          <div class="value small" id="kpTopSt">–</div>
-          <div class="label">station la plus active</div>
-          <div class="sub" id="kpTopStSub"></div>
-        </div>
-      </div>
-
-      <div class="kgroup">Perspective (archives)</div>
-      <div class="kpi-grid">
-        <div class="kcard">
-          <div class="value" id="kpAvgRot">–</div>
-          <div class="label">rotations moyennes / jour archivé</div>
-          <div class="sub" id="kpAvgRotSub"></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="kpVsAvg">–</div>
-          <div class="label">aujourd'hui vs moyenne archivée</div>
-          <div class="sub" id="kpVsAvgSub"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="viewBiz" style="display:none">
-      <div class="kgroup">Vue exploitant — demande & revenus du jour</div>
-      <div class="kpi-grid">
-        <div class="kcard">
-          <div class="value" id="bzTrips">–</div>
-          <div class="label">courses servies (vélos pris)</div>
-          <div class="sub" id="bzTripsSub"></div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="bzRevenue">–</div>
-          <div class="label">revenu estimé — hypothèse de prix</div>
-          <div class="sub">paramètre (pas une donnée) — prix moyen / course :
-            <input type="number" id="bzPrice" class="price-input" value="1.00" step="0.10" min="0"> €
-          </div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="bzPerBike">–</div>
-          <div class="label">courses par vélo à quai</div>
-          <div class="sub">taux de rotation de la flotte</div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="bzProj">–</div>
-          <div class="label">projection fin de journée</div>
-          <div class="sub" id="bzProjSub"></div>
-        </div>
-      </div>
-
-      <div class="kgroup">Exploitation — rééquilibrage</div>
-      <div class="kpi-grid">
-        <div class="kcard">
-          <div class="value" id="bzToMove">–</div>
-          <div class="label">vélos à repositionner</div>
-          <div class="sub">Σ |flux net par station| ÷ 2</div>
-        </div>
-        <div class="kcard">
-          <div class="value" id="bzRisk">–</div>
-          <div class="label">demande sur stations en défaut</div>
-          <div class="sub" id="bzRiskSub"></div>
-        </div>
-      </div>
-
-      <div class="panel-body" style="margin-top:10px">
-        <div class="chart-col">
-          <div class="chart-title">Priorités de rééquilibrage — stations en défaut, triées par la demande qu'elles portent (clic = voir sur la carte)</div>
-          <table class="biz-table">
-            <thead>
-              <tr><th>Station</th><th>État</th><th>Mvts jour</th><th>Vélos</th><th>Bornettes</th></tr>
-            </thead>
-            <tbody id="bzRebalance"></tbody>
-          </table>
-          <div class="empty-note" id="bzRebalanceEmpty" style="display:none">Aucune station en défaut en ce moment 🎉</div>
-        </div>
-        <div class="toplist">
-          <div class="chart-title">Puits — les vélos s'y accumulent (flux net +)</div>
-          <div id="bzSinks"></div>
-          <div class="chart-title" style="margin-top:10px">Sources — elles se vident (flux net −)</div>
-          <div id="bzSources"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="viewArr" style="display:none">
-      <div class="arr-layout">
-        <div class="arr-map-col">
-          <div class="chart-title">Activité du jour par arrondissement — clic sur un arrondissement pour le détail</div>
-          <div id="arrChoro"></div>
-          <div class="arr-legend">
-            <span>Activité faible</span>
-            <span class="ramp"></span>
-            <span>forte</span>
-          </div>
-        </div>
-        <div class="arr-detail" id="arrDetail"></div>
-      </div>
-      
-      <div class="panel-body" style="margin-top: 24px; padding-bottom: 24px;">
-        <div class="chart-col">
-          <div class="chart-title">Arrondissements les plus actifs</div>
-          <div id="arrTopAct" class="toplist"></div>
-        </div>
-        <div class="chart-col">
-          <div class="chart-title">Tension (taux de remplissage)</div>
-          <div id="arrTopFill" class="toplist"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="viewLive" style="display:none">
-      <div class="kpis">
-        <div class="tile">
-          <div class="value" id="kEvents">–</div>
-          <div class="label">événements aujourd'hui</div>
-        </div>
-        <div class="tile">
-          <div class="value" id="kTaken">–</div>
-          <div class="label">vélos pris</div>
-        </div>
-        <div class="tile">
-          <div class="value" id="kReturned">–</div>
-          <div class="label">vélos rendus</div>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="chart-col">
-          <div class="chart-legend">
-            <span><span class="lswatch" style="background:var(--series-blue)"></span>Vélos pris</span>
-            <span><span class="lswatch" style="background:var(--series-green)"></span>Vélos rendus</span>
-            <span style="color:var(--muted)">· glisser pour zoomer · double-clic pour réinitialiser</span>
-          </div>
-          <div class="chart-box" id="liveChart"></div>
-        </div>
-        <div class="toplist">
-          <div class="chart-title">Stations les plus actives aujourd'hui</div>
-          <div id="topList"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="viewHist" style="display:none">
-      <div class="panel-body">
-        <div class="chart-col">
-          <div class="chart-title">Événements par jour archivé</div>
-          <div class="chart-box" id="dailyChart"></div>
-        </div>
-        <div class="chart-col">
-          <div class="chart-legend">
-            <span><span class="lswatch" style="background:var(--series-blue)"></span>Vélos pris</span>
-            <span><span class="lswatch" style="background:var(--series-green)"></span>Vélos rendus</span>
-          </div>
-          <div class="chart-title">Profil horaire moyen (jour vs nuit)</div>
-          <div class="chart-box" id="profChart"></div>
-        </div>
-      </div>
-      <div class="empty-note" id="histEmpty" style="display:none">
-        Aucune archive Parquet pour l'instant — lance <code>uv run python -m velib.archiver</code>
-        après une journée de collecte, puis reviens ici.
-      </div>
-    </div>
-  </section>
-
-  <div id="map"></div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-  <script>
-    "use strict";
+﻿
 
     /* ========== Constantes visuelles ========== */
     const RAMPS = {
@@ -1187,9 +9,9 @@
     const CLOSED = "#898781";
 
     /* ========== Carte Leaflet ========== */
-    // Renderer canvas partagé, padding large : le canvas déborde du viewport,
+    // Renderer canvas partagÃ©, padding large : le canvas dÃ©borde du viewport,
     // donc un petit pan ne provoque pas de redraw. Tous les marqueurs y sont
-    // dessinés d'un coup (au lieu d'un layer SVG par station).
+    // dessinÃ©s d'un coup (au lieu d'un layer SVG par station).
     const canvasRenderer = L.canvas({ padding: 0.5 });
     const map = L.map("map", { preferCanvas: true, renderer: canvasRenderer })
       .setView([48.859, 2.347], 12);
@@ -1209,14 +31,14 @@
     else if (dark.addListener) dark.addListener(setTiles);
 
     // Sous CLUSTER_ZOOM, on masque les ~1516 stations et on affiche des bulles
-    // agrégées : par arrondissement dans Paris, par proximité en banlieue.
-    // Plus lisible au dézoom, et beaucoup plus léger (les marqueurs individuels
+    // agrÃ©gÃ©es : par arrondissement dans Paris, par proximitÃ© en banlieue.
+    // Plus lisible au dÃ©zoom, et beaucoup plus lÃ©ger (les marqueurs individuels
     // ne sont plus rendus).
     const CLUSTER_ZOOM = 13;
     const stationLayer = L.layerGroup().addTo(map);
     const clusterLayer = L.layerGroup();
 
-    /* ========== État global ========== */
+    /* ========== Ã‰tat global ========== */
     let mode = "bikes";
     const markers = new Map();
     let stations = new Map();
@@ -1260,32 +82,32 @@
       const s = stations.get(id);
       const now = Date.now() / 1000 + clockOffset;
       const pctBikes = s.capacity ? (100 * s.bikes_available / s.capacity) : 0;
-      const status = !s.is_installed ? "⛔ Hors service"
-        : (!s.is_renting && !s.is_returning) ? "⛔ Fermée (ni location ni retour)"
-        : !s.is_renting ? "⚠️ Location suspendue"
-        : !s.is_returning ? "⚠️ Retour suspendu"
-        : "✅ En service";
+      const status = !s.is_installed ? "â›” Hors service"
+        : (!s.is_renting && !s.is_returning) ? "â›” FermÃ©e (ni location ni retour)"
+        : !s.is_renting ? "âš ï¸ Location suspendue"
+        : !s.is_returning ? "âš ï¸ Retour suspendu"
+        : "âœ… En service";
       const delta = s.bikes_delta > 0 ? `+${s.bikes_delta}` : `${s.bikes_delta || 0}`;
       return `<div class="popup">
     <h3>${s.name}</h3>
-    <div class="code">n° ${s.station_code}</div>
+    <div class="code">nÂ° ${s.station_code}</div>
     <table>
-      <tr><td>Vélos disponibles</td><td><b>${s.bikes_available}</b></td></tr>
-      <tr><td>&nbsp;&nbsp;dont mécaniques</td><td>${s.mechanical}</td></tr>
-      <tr><td>&nbsp;&nbsp;dont électriques</td><td>${s.ebike}</td></tr>
+      <tr><td>VÃ©los disponibles</td><td><b>${s.bikes_available}</b></td></tr>
+      <tr><td>&nbsp;&nbsp;dont mÃ©caniques</td><td>${s.mechanical}</td></tr>
+      <tr><td>&nbsp;&nbsp;dont Ã©lectriques</td><td>${s.ebike}</td></tr>
       <tr><td>Bornettes libres</td><td><b>${s.docks_available}</b></td></tr>
-      <tr><td>Capacité</td><td>${s.capacity}</td></tr>
+      <tr><td>CapacitÃ©</td><td>${s.capacity}</td></tr>
     </table>
     <div class="bar"><i style="width:${pctBikes}%;background:${RAMPS.bikes[2]}"></i></div>
     <div class="status">${status}</div>
-    <div class="delta">Dernier changement : ${delta} vélo(s) · signalé il y a ${fmtAge(now - (s.last_reported || s.ts))}</div>
+    <div class="delta">Dernier changement : ${delta} vÃ©lo(s) Â· signalÃ© il y a ${fmtAge(now - (s.last_reported || s.ts))}</div>
   </div>`;
     }
 
     /* ========== Rendu des marqueurs ========== */
-    // On coupe les ondes radar pendant un déplacement de carte et au-delà d'un
-    // plafond de pings simultanés : c'est ce qui gardait le pan fluide même en
-    // pleine rafale d'événements.
+    // On coupe les ondes radar pendant un dÃ©placement de carte et au-delÃ  d'un
+    // plafond de pings simultanÃ©s : c'est ce qui gardait le pan fluide mÃªme en
+    // pleine rafale d'Ã©vÃ©nements.
     let mapMoving = false, activePings = 0;
     function ping(m, s) {
       if (mapMoving || activePings > 36 || map.getZoom() < CLUSTER_ZOOM) return;
@@ -1314,14 +136,14 @@
       pendingRestyle.clear();
     });
 
-    // File des marqueurs à re-styler quand on relâchera la carte : pendant un
+    // File des marqueurs Ã  re-styler quand on relÃ¢chera la carte : pendant un
     // pan/zoom on n'appelle JAMAIS setStyle (donc aucun redraw du canvas au
-    // milieu du geste) ; on rejoue tout à moveend.
+    // milieu du geste) ; on rejoue tout Ã  moveend.
     const pendingRestyle = new Set();
 
     function restyleMarker(m, s, id) {
       const c = color(s);
-      if (c !== m._fill) {          // redraw uniquement si la COULEUR a changé
+      if (c !== m._fill) {          // redraw uniquement si la COULEUR a changÃ©
         m.setStyle(style(s));
         m._fill = c;
       }
@@ -1346,8 +168,8 @@
       for (const [id, s] of stations) upsertMarker(id, s);
     }
 
-    /* ========== Clustering au dézoom ========== */
-    // Couleur d'une bulle d'après son taux de remplissage, dans la rampe du mode.
+    /* ========== Clustering au dÃ©zoom ========== */
+    // Couleur d'une bulle d'aprÃ¨s son taux de remplissage, dans la rampe du mode.
     function clusterColor(ratio, val) {
       if (val === 0) return CRITIC;
       return RAMPS[mode][Math.min(3, Math.floor(ratio * 4))];
@@ -1374,7 +196,7 @@
       for (const s of stations.values()) {
         const a = arrOf(s);
         const bucket = a != null ? paris : banlieue;
-        // Paris : regroupé par arrondissement ; banlieue : par cellule ~3 km.
+        // Paris : regroupÃ© par arrondissement ; banlieue : par cellule ~3 km.
         const key = a != null ? a : Math.round(s.lat / 0.03) + "_" + Math.round(s.lon / 0.03);
         let o = bucket.get(key);
         if (!o) { o = { arr: a, n: 0, bikes: 0, docks: 0, cap: 0, lat: 0, lon: 0 }; bucket.set(key, o); }
@@ -1391,12 +213,12 @@
         const size = Math.round(24 + Math.min(o.n, 90) / 90 * 22);
         clusterLayer.addLayer(clusterBubble(o.lat / o.n, o.lon / o.n, o.arr, size,
           clusterColor(ratio, val),
-          `<b>${o.arr}ᵉ arrondissement</b><br>${o.n} stations · ${fmtN(o.bikes)} vélos · ${fmtN(o.docks)} bornettes`));
+          `<b>${o.arr}áµ‰ arrondissement</b><br>${o.n} stations Â· ${fmtN(o.bikes)} vÃ©los Â· ${fmtN(o.docks)} bornettes`));
       }
       for (const o of banlieue.values()) {
         const size = Math.round(20 + Math.min(o.n, 50) / 50 * 18);
         clusterLayer.addLayer(clusterBubble(o.lat / o.n, o.lon / o.n, o.n, size,
-          CLOSED, `${o.n} stations · ${fmtN(o.bikes)} vélos`, true));
+          CLOSED, `${o.n} stations Â· ${fmtN(o.bikes)} vÃ©los`, true));
       }
     }
 
@@ -1412,7 +234,7 @@
       }
     }
     map.on("zoomend", updateMapMode);
-    // Rafraîchit les couleurs des clusters quand la carte est visible et dézoomée.
+    // RafraÃ®chit les couleurs des clusters quand la carte est visible et dÃ©zoomÃ©e.
     setInterval(function () {
       if (!panelOpen && map.getZoom() < CLUSTER_ZOOM) buildClusters();
     }, 5000);
@@ -1432,16 +254,16 @@
       }
       const fmt = (n) => n.toLocaleString("fr-FR");
       document.getElementById("stBikes").textContent = fmt(bikes);
-      document.getElementById("stBikesSub").textContent = `dont ${fmt(mech)} méca · ${fmt(ebike)} élec`;
+      document.getElementById("stBikesSub").textContent = `dont ${fmt(mech)} mÃ©ca Â· ${fmt(ebike)} Ã©lec`;
       document.getElementById("stDocks").textContent = fmt(docks);
       document.getElementById("stEmpty").textContent = fmt(empty);
       document.getElementById("stFull").textContent = fmt(full);
       document.getElementById("stClosed").textContent = fmt(closed);
     }
 
-    // Rafale d'événements (un tour de producer) : au lieu de relancer le
-    // travail O(n) par événement, on marque « à rafraîchir » et on flushe une
-    // seule fois à la prochaine frame — le pan reste fluide sous la charge.
+    // Rafale d'Ã©vÃ©nements (un tour de producer) : au lieu de relancer le
+    // travail O(n) par Ã©vÃ©nement, on marque Â« Ã  rafraÃ®chir Â» et on flushe une
+    // seule fois Ã  la prochaine frame â€” le pan reste fluide sous la charge.
     let statsDirty = false;
     function scheduleStats() {
       if (statsDirty) return;
@@ -1453,7 +275,7 @@
       });
     }
 
-    /* ========== Légende ========== */
+    /* ========== LÃ©gende ========== */
     const legend = L.control({ position: "bottomleft" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "legend");
@@ -1465,27 +287,27 @@
     function renderLegend() {
       if (!legend._div) return;
       const ramp = RAMPS[mode];
-      const noun = mode === "bikes" ? "vélos" : "bornettes";
+      const noun = mode === "bikes" ? "vÃ©los" : "bornettes";
       const sw = (c) => `<span class="swatch" style="background:${c}"></span>`;
       legend._div.innerHTML = `
     <div class="title">Remplissage (${noun})</div>
-    ${sw(CRITIC)}aucun ${mode === "bikes" ? "vélo" : "bornette libre"}<br>
-    ${sw(ramp[0])}jusqu'à 25 %<br>
-    ${sw(ramp[1])}25 – 50 %<br>
-    ${sw(ramp[2])}50 – 75 %<br>
+    ${sw(CRITIC)}aucun ${mode === "bikes" ? "vÃ©lo" : "bornette libre"}<br>
+    ${sw(ramp[0])}jusqu'Ã  25 %<br>
+    ${sw(ramp[1])}25 â€“ 50 %<br>
+    ${sw(ramp[2])}50 â€“ 75 %<br>
     ${sw(ramp[3])}plus de 75 %<br>
-    ${sw(CLOSED)}station fermée`;
+    ${sw(CLOSED)}station fermÃ©e`;
     }
     legend.addTo(map);
 
-    /* ========== Badge de direct & fraîcheur ========== */
+    /* ========== Badge de direct & fraÃ®cheur ========== */
     function renderLive() {
       const badge = document.getElementById("liveBadge");
       const label = document.getElementById("liveLabel");
       const text = document.getElementById("freshText");
       if (!connected) {
         badge.className = "live off";
-        label.textContent = "CONNEXION…";
+        label.textContent = "CONNEXIONâ€¦";
         text.textContent = "";
         return;
       }
@@ -1493,23 +315,23 @@
       const stale = age != null && age > 180;
       badge.className = stale ? "live stale" : "live";
       label.textContent = stale ? "FLUX INTERROMPU" : "EN DIRECT";
-      text.textContent = age == null ? "" : `· dernier événement il y a ${fmtAge(age)}`;
+      text.textContent = age == null ? "" : `Â· dernier Ã©vÃ©nement il y a ${fmtAge(age)}`;
     }
     setInterval(renderLive, 5000);
 
-    /* ========== Étage 1 : snapshot (Redis) ========== */
+    /* ========== Ã‰tage 1 : snapshot (Redis) ========== */
     async function loadSnapshot() {
       const payload = await (await fetch("/api/stations")).json();
       clockOffset = payload.now - Date.now() / 1000;
       lastTs = payload.last_ts;
       stations = new Map(payload.stations.map((s) => [s.station_id, s]));
       restyleAll();
-      updateMapMode();      // clusters au dézoom, stations individuelles au zoom
+      updateMapMode();      // clusters au dÃ©zoom, stations individuelles au zoom
       renderStats();
       renderLive();
     }
 
-    /* ========== Étage 2 : flux SSE ========== */
+    /* ========== Ã‰tage 2 : flux SSE ========== */
     let everConnected = false;
 
     function applyEvent(s) {
@@ -1594,8 +416,8 @@
       if (s.bikes_delta < 0) { p.taken += -s.bikes_delta; kpi.taken += -s.bikes_delta; }
       else if (s.bikes_delta > 0) { p.returned += s.bikes_delta; kpi.returned += s.bikes_delta; }
       actPoints.set(t, p);
-      // Tranches minute des KPIs : entretenues en parallèle, quelle que soit
-      // la granularité choisie dans l'onglet « direct ».
+      // Tranches minute des KPIs : entretenues en parallÃ¨le, quelle que soit
+      // la granularitÃ© choisie dans l'onglet Â« direct Â».
       const tm = Math.floor(s.ts / 60) * 60;
       const pm = minutePoints.get(tm) || { t: tm, events: 0, taken: 0, returned: 0 };
       pm.events++;
@@ -1613,11 +435,11 @@
       liveChartTimer = setTimeout(function () { liveChartTimer = null; renderLiveChart(); }, 400);
     }
 
-    /* ================== Onglet Métier (vue exploitant) ================== */
+    /* ================== Onglet MÃ©tier (vue exploitant) ================== */
     let bizData = null, bizProfile = null, bizPrice = 1.00, bizTimer = null;
 
     function scheduleBiz() {
-      // Les événements arrivent par vagues (~1/min) : on regroupe le refetch.
+      // Les Ã©vÃ©nements arrivent par vagues (~1/min) : on regroupe le refetch.
       if (bizTimer) return;
       bizTimer = setTimeout(function () { bizTimer = null; loadBizTab(); }, 3000);
     }
@@ -1686,17 +508,17 @@
 
       document.getElementById("bzTrips").textContent = fmtN(d.today_taken);
       document.getElementById("bzTripsSub").textContent =
-        fmtN(d.today_returned) + " vélos rendus en face";
+        fmtN(d.today_returned) + " vÃ©los rendus en face";
       document.getElementById("bzRevenue").textContent =
-        fmtN(Math.round(d.today_taken * bizPrice)) + " €";
+        fmtN(Math.round(d.today_taken * bizPrice)) + " â‚¬";
 
       let fleet = 0;
       for (const s of stations.values()) fleet += s.bikes_available || 0;
       document.getElementById("bzPerBike").textContent =
-        fleet ? (d.today_taken / fleet).toFixed(2).replace(".", ",") : "–";
+        fleet ? (d.today_taken / fleet).toFixed(2).replace(".", ",") : "â€“";
 
-      /* Projection fin de journée : la part de la demande quotidienne déjà
-         écoulée à cette heure-ci, d'après le profil horaire moyen archivé. */
+      /* Projection fin de journÃ©e : la part de la demande quotidienne dÃ©jÃ 
+         Ã©coulÃ©e Ã  cette heure-ci, d'aprÃ¨s le profil horaire moyen archivÃ©. */
       const projEl = document.getElementById("bzProj");
       const projSub = document.getElementById("bzProjSub");
       if (bizProfile && bizProfile.length) {
@@ -1709,22 +531,22 @@
         }
         const share = totalDay ? done / totalDay : 0;
         if (share > 0.05) {
-          projEl.textContent = "≈ " + fmtN(Math.round(d.today_taken / share)) + " courses";
-          projSub.textContent = pct(share) + " de la journée type déjà écoulée";
+          projEl.textContent = "â‰ˆ " + fmtN(Math.round(d.today_taken / share)) + " courses";
+          projSub.textContent = pct(share) + " de la journÃ©e type dÃ©jÃ  Ã©coulÃ©e";
         } else {
-          projEl.textContent = "–";
-          projSub.textContent = "trop tôt pour projeter";
+          projEl.textContent = "â€“";
+          projSub.textContent = "trop tÃ´t pour projeter";
         }
       } else {
-        projEl.textContent = "–";
-        projSub.textContent = "nécessite des archives (lance l'archiveur)";
+        projEl.textContent = "â€“";
+        projSub.textContent = "nÃ©cessite des archives (lance l'archiveur)";
       }
 
       document.getElementById("bzToMove").textContent = fmtN(d.to_move);
       document.getElementById("bzRisk").textContent =
-        d.total_moves ? pct(d.at_risk_moves / d.total_moves) : "–";
+        d.total_moves ? pct(d.at_risk_moves / d.total_moves) : "â€“";
       document.getElementById("bzRiskSub").textContent =
-        fmtN(d.rebalance.length) + " station(s) en défaut listée(s)";
+        fmtN(d.rebalance.length) + " station(s) en dÃ©faut listÃ©e(s)";
 
       const tbody = document.getElementById("bzRebalance");
       document.getElementById("bzRebalanceEmpty").style.display =
@@ -1745,9 +567,9 @@
           sign + fmtN(s.net) + '</b></div>';
       };
       document.getElementById("bzSinks").innerHTML =
-        d.sinks.length ? d.sinks.map(flowRow).join("") : '<div class="empty-note">—</div>';
+        d.sinks.length ? d.sinks.map(flowRow).join("") : '<div class="empty-note">â€”</div>';
       document.getElementById("bzSources").innerHTML =
-        d.sources.length ? d.sources.map(flowRow).join("") : '<div class="empty-note">—</div>';
+        d.sources.length ? d.sources.map(flowRow).join("") : '<div class="empty-note">â€”</div>';
     }
 
     document.getElementById("bzPrice").addEventListener("input", function (e) {
@@ -1755,7 +577,7 @@
       renderBizTab();
     });
 
-    /* Clic sur une ligne de rééquilibrage → zoom carte + popup */
+    /* Clic sur une ligne de rÃ©Ã©quilibrage â†’ zoom carte + popup */
     document.getElementById("bzRebalance").addEventListener("click", function (e) {
       const tr = e.target.closest("tr");
       if (!tr) return;
@@ -1765,7 +587,7 @@
     });
 
     /* ================== Onglet Arrondissements ================== */
-    // L'arrondissement se lit dans le préfixe du station_code (16107 → 16) :
+    // L'arrondissement se lit dans le prÃ©fixe du station_code (16107 â†’ 16) :
     // 1..20 = Paris intra-muros, >= 21 = banlieue.
     function arrOf(s) {
       const a = Math.floor(parseInt(s.station_code, 10) / 1000);
@@ -1774,7 +596,7 @@
 
     let arrData = [], arrGeo = null, arrSelected = null;
 
-    // Échelle de chaleur bleu (activité faible) → rouge (forte).
+    // Ã‰chelle de chaleur bleu (activitÃ© faible) â†’ rouge (forte).
     function heatColor(t) {
       t = Math.max(0, Math.min(1, t));
       const lerp = (a, b) => Math.round(a + (b - a) * t);
@@ -1924,7 +746,7 @@
           if (f.geometry.type === 'Polygon') d = drawPoly(f.geometry.coordinates);
           else if (f.geometry.type === 'MultiPolygon') d = f.geometry.coordinates.map(drawPoly).join(' ');
           
-          paths += `<path id="arr-path-${arrId}" d="${d}" style="cursor:pointer; transition: opacity 0.2s, stroke-width 0.2s" onclick="selectArr(${arrId})"><title>${arrId}ᵉ arrondissement</title></path>`;
+          paths += `<path id="arr-path-${arrId}" d="${d}" style="cursor:pointer; transition: opacity 0.2s, stroke-width 0.2s" onclick="selectArr(${arrId})"><title>${arrId}áµ‰ arrondissement</title></path>`;
           
           const aData = arrData.find(a => a.arr === arrId);
           if (aData) {
@@ -1965,7 +787,6 @@
       arrSelected = (arrSelected === arr) ? null : arr;
       renderArrChoro();
       renderArrDetail(arrSelected);
-      renderArrTops();
     }
 
     function renderArrDetail(arr) {
@@ -1979,41 +800,41 @@
         }
         box.innerHTML =
           `<div class="dtitle">Paris intra-muros</div>` +
-          `<div class="dsub">Vue d'ensemble — clic sur un arrondissement pour le détail</div>` +
+          `<div class="dsub">Vue d'ensemble â€” clic sur un arrondissement pour le dÃ©tail</div>` +
           row("Arrondissements", arrData.length) +
           row("Stations", fmtN(st)) +
-          row("Vélos disponibles", fmtN(bikes)) +
-          row("dont électriques", fmtN(ebike)) +
-          row("Remplissage moyen", cap ? Math.round(100 * bikes / cap) + " %" : "–") +
+          row("VÃ©los disponibles", fmtN(bikes)) +
+          row("dont Ã©lectriques", fmtN(ebike)) +
+          row("Remplissage moyen", cap ? Math.round(100 * bikes / cap) + " %" : "â€“") +
           row("Stations vides", fmtN(empty)) +
-          row("Activité du jour", fmtN(taken + returned) + " mvts") +
-          row("Vélos pris / rendus", fmtN(taken) + " / " + fmtN(returned));
+          row("ActivitÃ© du jour", fmtN(taken + returned) + " mvts") +
+          row("VÃ©los pris / rendus", fmtN(taken) + " / " + fmtN(returned));
         return;
       }
       const a = arrData.find((x) => x.arr === arr);
       if (!a) return;
       const fill = a.capacity ? Math.round(100 * a.bikes / a.capacity) : 0;
       box.innerHTML =
-        `<div class="dtitle">${a.arr}ᵉ arrondissement</div>` +
+        `<div class="dtitle">${a.arr}áµ‰ arrondissement</div>` +
         `<div class="dsub">${a.stations} stations</div>` +
-        row("Vélos disponibles", fmtN(a.bikes)) +
-        row("dont électriques", fmtN(a.ebike)) +
+        row("VÃ©los disponibles", fmtN(a.bikes)) +
+        row("dont Ã©lectriques", fmtN(a.ebike)) +
         row("Bornettes libres", fmtN(a.docks)) +
         row("Remplissage", fill + " %") +
         row("Stations vides", a.empty) +
         row("Stations pleines", a.full) +
-        row("Activité du jour", fmtN(a.taken + a.returned) + " mvts") +
-        row("Vélos pris", fmtN(a.taken)) +
-        row("Vélos rendus", fmtN(a.returned));
+        row("ActivitÃ© du jour", fmtN(a.taken + a.returned) + " mvts") +
+        row("VÃ©los pris", fmtN(a.taken)) +
+        row("VÃ©los rendus", fmtN(a.returned));
     }
 
     /* ================== Onglet Indicateurs (KPIs) ================== */
-    /* Deux familles : l'instantané (calculé sur la photo `stations`, donc mis
-       à jour par chaque événement SSE) et l'activité du jour (tranches d'une
-       minute entretenues en parallèle de l'onglet direct). */
+    /* Deux familles : l'instantanÃ© (calculÃ© sur la photo `stations`, donc mis
+       Ã  jour par chaque Ã©vÃ©nement SSE) et l'activitÃ© du jour (tranches d'une
+       minute entretenues en parallÃ¨le de l'onglet direct). */
     let minutePoints = new Map();   // t (minute) -> {events, taken, returned}
     let kpiTop = [];
-    let histDays = null;            // résumé des archives Parquet
+    let histDays = null;            // rÃ©sumÃ© des archives Parquet
     let kpiTimer = null;
 
     function scheduleKpis() {
@@ -2053,7 +874,7 @@
     function renderKpiTab() {
       if (biTab !== "kpi") return;
 
-      /* --- État instantané (photo stations) --- */
+      /* --- Ã‰tat instantanÃ© (photo stations) --- */
       let bikes = 0, mech = 0, ebike = 0, cap = 0, open = 0, total = 0,
         withBike = 0, empty = 0, full = 0;
       for (const s of stations.values()) {
@@ -2070,25 +891,25 @@
       const fill = cap ? bikes / cap : 0;
       document.getElementById("kpFill").textContent = pct(fill);
       document.getElementById("kpFillSub").textContent =
-        fmtN(bikes) + " vélos pour " + fmtN(cap) + " bornettes";
+        fmtN(bikes) + " vÃ©los pour " + fmtN(cap) + " bornettes";
       document.getElementById("kpFillBar").style.width = (100 * fill) + "%";
 
       const elec = (mech + ebike) ? ebike / (mech + ebike) : 0;
       document.getElementById("kpElec").textContent = pct(elec);
       document.getElementById("kpElecSub").textContent =
-        fmtN(ebike) + " électriques · " + fmtN(mech) + " mécaniques";
+        fmtN(ebike) + " Ã©lectriques Â· " + fmtN(mech) + " mÃ©caniques";
       document.getElementById("kpElecBarE").style.width = (100 * elec) + "%";
       document.getElementById("kpElecBarM").style.width = (100 * (1 - elec)) + "%";
 
-      document.getElementById("kpAvail").textContent = open ? pct(withBike / open) : "–";
+      document.getElementById("kpAvail").textContent = open ? pct(withBike / open) : "â€“";
       document.getElementById("kpAvailSub").textContent =
-        fmtN(empty) + " stations ouvertes sans vélo";
+        fmtN(empty) + " stations ouvertes sans vÃ©lo";
       document.getElementById("kpTension").textContent = fmtN(empty + full);
-      document.getElementById("kpOpen").textContent = total ? pct(open / total) : "–";
+      document.getElementById("kpOpen").textContent = total ? pct(open / total) : "â€“";
       document.getElementById("kpOpenSub").textContent =
         fmtN(open) + " sur " + fmtN(total) + " stations";
 
-      /* --- Activité du jour (tranches minute) --- */
+      /* --- ActivitÃ© du jour (tranches minute) --- */
       let taken = 0, returned = 0;
       const hourly = new Map();
       for (const p of minutePoints.values()) {
@@ -2098,7 +919,7 @@
       }
       document.getElementById("kpRot").textContent = fmtN(taken + returned);
       document.getElementById("kpRotSub").textContent =
-        fmtN(taken) + " pris · " + fmtN(returned) + " rendus";
+        fmtN(taken) + " pris Â· " + fmtN(returned) + " rendus";
       const net = returned - taken;
       document.getElementById("kpNet").textContent = (net > 0 ? "+" : "") + fmtN(net);
 
@@ -2119,7 +940,7 @@
       let peakH = null, peakV = 0;
       for (const [h, v] of hourly) if (v > peakV) { peakV = v; peakH = h; }
       document.getElementById("kpPeak").textContent =
-        peakH == null ? "–" : new Date(peakH * 1000).getHours() + " h";
+        peakH == null ? "â€“" : new Date(peakH * 1000).getHours() + " h";
       document.getElementById("kpPeakSub").textContent =
         peakH == null ? "" : fmtN(peakV) + " mouvements dans l'heure";
 
@@ -2134,15 +955,15 @@
         const avg = histDays.reduce((a, d) => a + d.taken + d.returned, 0) / histDays.length;
         document.getElementById("kpAvgRot").textContent = fmtN(Math.round(avg));
         document.getElementById("kpAvgRotSub").textContent =
-          "sur " + histDays.length + " jour(s) archivé(s)";
-        document.getElementById("kpVsAvg").textContent = avg ? pct((taken + returned) / avg) : "–";
+          "sur " + histDays.length + " jour(s) archivÃ©(s)";
+        document.getElementById("kpVsAvg").textContent = avg ? pct((taken + returned) / avg) : "â€“";
         document.getElementById("kpVsAvgSub").textContent =
-          "d'une journée moyenne complète";
+          "d'une journÃ©e moyenne complÃ¨te";
       } else {
-        document.getElementById("kpAvgRot").textContent = "–";
+        document.getElementById("kpAvgRot").textContent = "â€“";
         document.getElementById("kpAvgRotSub").textContent =
-          "aucune archive — lance l'archiveur ce soir";
-        document.getElementById("kpVsAvg").textContent = "–";
+          "aucune archive â€” lance l'archiveur ce soir";
+        document.getElementById("kpVsAvg").textContent = "â€“";
         document.getElementById("kpVsAvgSub").textContent = "";
       }
     }
@@ -2159,7 +980,7 @@
     }
 
     // Glisser sur une courbe pour zoomer sur une plage de temps ; double-clic
-    // ou bouton ⟲ pour réinitialiser. La fenêtre de zoom est mémorisée en
+    // ou bouton âŸ² pour rÃ©initialiser. La fenÃªtre de zoom est mÃ©morisÃ©e en
     // valeur X (temps) sur la box, donc elle survit aux redraws du direct.
     var chartDragging = false;
 
@@ -2173,7 +994,7 @@
       if (!d || !d.xs.length) { box.innerHTML = ""; return; }
       var xs = d.xs, series = d.series, fmtX = d.fmtX, full = xs.length;
 
-      // Découpe selon la fenêtre de zoom courante (en valeur X).
+      // DÃ©coupe selon la fenÃªtre de zoom courante (en valeur X).
       var i0 = 0, i1 = full - 1;
       if (box._zx) {
         while (i0 < full - 1 && xs[i0] < box._zx.min) i0++;
@@ -2207,7 +1028,7 @@
         return '<path d="M' + s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join("L") + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
       }).join("");
 
-      var resetBtn = box._zx ? '<div class="chart-reset" title="Réinitialiser le zoom">⟲</div>' : '';
+      var resetBtn = box._zx ? '<div class="chart-reset" title="RÃ©initialiser le zoom">âŸ²</div>' : '';
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '">' + g + paths +
         '<line class="ch" x1="0" y1="' + P.t + '" x2="0" y2="' + (P.t + ih) + '" stroke="' + muted + '" visibility="hidden"/>' +
         '<rect class="plot" x="' + P.l + '" y="' + P.t + '" width="' + iw + '" height="' + ih + '" fill="transparent" style="cursor:crosshair"/>' +
@@ -2335,19 +1156,19 @@
         taken.push(p ? p.taken : 0);
         returned.push(p ? p.returned : 0);
       }
-      // On ne trace que la plage où il y a effectivement de la donnée : on
-      // rogne les tranches vides en TÊTE (avant les premières données du jour —
-      // cas du cloud démarré en cours de journée : pas de longue ligne à 0
-      // depuis 00h00) et en QUEUE (le bucket courant à peine commencé, encore
-      // vide — évite la chute verticale à 0 au bord droit). Les creux INTERNES
-      // (la nuit, une vraie activité basse mais non nulle) sont conservés.
+      // On ne trace que la plage oÃ¹ il y a effectivement de la donnÃ©e : on
+      // rogne les tranches vides en TÃŠTE (avant les premiÃ¨res donnÃ©es du jour â€”
+      // cas du cloud dÃ©marrÃ© en cours de journÃ©e : pas de longue ligne Ã  0
+      // depuis 00h00) et en QUEUE (le bucket courant Ã  peine commencÃ©, encore
+      // vide â€” Ã©vite la chute verticale Ã  0 au bord droit). Les creux INTERNES
+      // (la nuit, une vraie activitÃ© basse mais non nulle) sont conservÃ©s.
       var first = 0, last = xs.length - 1;
       while (first <= last && taken[first] === 0 && returned[first] === 0) first++;
       while (last >= first && taken[last] === 0 && returned[last] === 0) last--;
       if (first > last) { document.getElementById("liveChart").innerHTML = ""; return; }
       drawLineChart(document.getElementById("liveChart"), xs.slice(first, last + 1), [
-        { name: "Vélos pris", color: cssVar("--series-blue"), values: taken.slice(first, last + 1) },
-        { name: "Vélos rendus", color: cssVar("--series-green"), values: returned.slice(first, last + 1) },
+        { name: "VÃ©los pris", color: cssVar("--series-blue"), values: taken.slice(first, last + 1) },
+        { name: "VÃ©los rendus", color: cssVar("--series-green"), values: returned.slice(first, last + 1) },
       ], hhmm);
     }
 
@@ -2376,14 +1197,14 @@
         return {
           label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7),
           value: d.events,
-          tip: '<b>' + d.date + '</b><br>' + fmtN(d.events) + ' mvts<br>' + fmtN(d.taken) + ' pris · ' + fmtN(d.returned) + ' rendus',
+          tip: '<b>' + d.date + '</b><br>' + fmtN(d.events) + ' mvts<br>' + fmtN(d.taken) + ' pris Â· ' + fmtN(d.returned) + ' rendus',
         };
       }));
 
       drawLineChart(document.getElementById("profChart"),
         prof.hours.map(function (h) { return h.hour; }), [
-          { name: "Vélos pris", color: cssVar("--series-blue"), values: prof.hours.map(function (h) { return h.taken; }) },
-          { name: "Vélos rendus", color: cssVar("--series-green"), values: prof.hours.map(function (h) { return h.returned; }) },
+          { name: "VÃ©los pris", color: cssVar("--series-blue"), values: prof.hours.map(function (h) { return h.taken; }) },
+          { name: "VÃ©los rendus", color: cssVar("--series-green"), values: prof.hours.map(function (h) { return h.returned; }) },
         ], function (h) { return h + " h"; });
     }
 
@@ -2394,9 +1215,9 @@
       panelOpen = !panelOpen;
       panelEl.classList.toggle("open", panelOpen);
       document.getElementById("panelBtn").classList.toggle("active", panelOpen);
-      // Analyse = plein écran : on masque la carte (elle n'est plus rendue du
-      // tout → fluidité) ; à la fermeture on la réaffiche et on recalcule sa
-      // taille (elle était en display:none).
+      // Analyse = plein Ã©cran : on masque la carte (elle n'est plus rendue du
+      // tout â†’ fluiditÃ©) ; Ã  la fermeture on la rÃ©affiche et on recalcule sa
+      // taille (elle Ã©tait en display:none).
       document.getElementById("map").style.display = panelOpen ? "none" : "";
       if (panelOpen) {
         loadBiTab();
@@ -2461,7 +1282,7 @@
       }, 200);
     });
 
-    // L'activité par arrondissement évolue : rafraîchissement doux quand l'onglet est ouvert.
+    // L'activitÃ© par arrondissement Ã©volue : rafraÃ®chissement doux quand l'onglet est ouvert.
     setInterval(function () {
       if (panelOpen && biTab === "arr") loadArrTab();
     }, 15000);
@@ -2478,11 +1299,11 @@
     document.getElementById("modeBikes").addEventListener("click", function () { setMode("bikes"); });
     document.getElementById("modeDocks").addEventListener("click", function () { setMode("docks"); });
 
-    /* ========== Recherche (autocomplétion live) ========== */
+    /* ========== Recherche (autocomplÃ©tion live) ========== */
     const searchInput = document.getElementById("search");
     const searchBox = document.getElementById("searchResults");
     let searchMatches = [], searchActive = -1;
-    // insensible aux accents ET à la casse : "republique" trouve "République"
+    // insensible aux accents ET Ã  la casse : "republique" trouve "RÃ©publique"
     const norm = (s) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
     function closeSearch() {
@@ -2502,7 +1323,7 @@
     function renderSearch() {
       const q = norm(searchInput.value.trim());
       if (q.length < 2) { closeSearch(); return; }
-      // priorité aux noms qui COMMENCENT par la requête, puis ceux qui la contiennent
+      // prioritÃ© aux noms qui COMMENCENT par la requÃªte, puis ceux qui la contiennent
       const starts = [], has = [];
       for (const st of stations.values()) {
         const n = norm(st.name);
@@ -2512,14 +1333,14 @@
       searchMatches = starts.concat(has).slice(0, 8);
       searchActive = searchMatches.length ? 0 : -1;
       if (!searchMatches.length) {
-        searchBox.innerHTML = '<div class="search-empty">Aucune station trouvée</div>';
+        searchBox.innerHTML = '<div class="search-empty">Aucune station trouvÃ©e</div>';
         searchBox.classList.add("open");
         return;
       }
-      const noun = mode === "bikes" ? "vélos" : "places";
+      const noun = mode === "bikes" ? "vÃ©los" : "places";
       searchBox.innerHTML = searchMatches.map(function (st, i) {
         const a = arrOf(st);
-        const loc = a ? (a + "ᵉ arr.") : "banlieue";
+        const loc = a ? (a + "áµ‰ arr.") : "banlieue";
         const n = mode === "bikes" ? st.bikes_available : st.docks_available;
         return '<div class="search-item' + (i === 0 ? " active" : "") + '" data-i="' + i + '">' +
           '<span><span class="si-name">' + st.name + '</span><br><span class="si-arr">' + loc + '</span></span>' +
@@ -2544,7 +1365,7 @@
       else if (e.key === "Enter") { if (searchMatches[searchActive]) goToStation(searchMatches[searchActive]); }
       else if (e.key === "Escape") { closeSearch(); searchInput.blur(); }
     });
-    // mousedown (pas click) + preventDefault : sélectionne avant que le blur ferme la liste
+    // mousedown (pas click) + preventDefault : sÃ©lectionne avant que le blur ferme la liste
     searchBox.addEventListener("mousedown", function (e) {
       const item = e.target.closest(".search-item");
       if (item) { e.preventDefault(); goToStation(searchMatches[Number(item.dataset.i)]); }
@@ -2552,6 +1373,4 @@
     document.addEventListener("click", function (e) {
       if (!e.target.closest(".search-wrap")) closeSearch();
     });
-  </script>
-</body>
-</html>
+  

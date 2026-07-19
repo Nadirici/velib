@@ -32,6 +32,18 @@ class TestAdd:
         # L'ancien jour a été purgé : seule la station du nouveau jour reste.
         assert [sid for sid, _ in agg.top_stations()] == [9]
 
+    def test_evenement_avant_minuit_est_ignore(self):
+        """Non-régression : un événement antérieur à minuit ne doit apparaître
+        NI dans series NI dans station_flows — sinon Métier surcompterait par
+        rapport à l'onglet Aujourd'hui."""
+        agg = ActivityAggregator()
+        agg.add(event(agg.day_start - 30, delta=-5))   # 30 s avant minuit
+        agg.add(event(agg.day_start + 60, delta=-2))   # aujourd'hui
+        # station_flows (Métier) et la somme de series (Aujourd'hui) coïncident
+        flows_taken = sum(t for t, _ in agg.station_flows().values())
+        series_taken = sum(p["taken"] for p in agg.series(60, agg.day_start, agg.day_start + 120))
+        assert flows_taken == series_taken == 2
+
 
 class TestSeries:
     def test_serie_continue_avec_zeros(self):

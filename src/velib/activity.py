@@ -1,21 +1,14 @@
-"""Couche vitesse de la BI : agrégation en mémoire du flux d'événements.
+"""Couche vitesse de la BI : agrégation en mémoire de l'activité du jour.
 
-Architecture lambda, versant « speed layer » : l'activité du jour est agrégée
-au fil de l'eau, en RAM, par tranches d'une minute (la granularité de base —
-l'API sait ensuite les fusionner en 5/15/60 min à la demande). Rien n'est
-persisté : au démarrage, le dashboard REJOUE les événements du jour depuis le
-journal Kafka (seek par timestamp) pour reconstruire cet état — Kafka est la
-seule source de vérité du direct. L'historique au-delà du jour est le rôle de
-la couche batch (archiver.py → Parquet → DuckDB).
+Les événements sont agrégés au fil de l'eau par tranches d'une minute (fusionnées
+en 5/15/60 min à la demande). Rien n'est persisté : le dashboard reconstruit cet
+état au démarrage en rejouant le journal Kafka du jour. L'historique au-delà du
+jour relève de la couche batch (Parquet + DuckDB).
 
-Métriques par tranche :
-- events   : nombre d'événements (attention : inclut les snapshots « initiaux »
-  émis à chaque redémarrage du producer — pic artificiel de ~1500) ;
-- taken    : vélos pris   (somme des bikes_delta négatifs, en valeur absolue) ;
-- returned : vélos rendus (somme des bikes_delta positifs).
-
-`taken`/`returned` sont les métriques honnêtes de l'activité réelle : un
-snapshot initial a bikes_delta=0 et ne les pollue pas.
+Par tranche : `events` (nombre d'événements, inclut les snapshots initiaux du
+producer), `taken` (vélos pris = |bikes_delta| négatifs), `returned` (vélos
+rendus = bikes_delta positifs). taken/returned reflètent l'activité réelle
+(un snapshot initial a bikes_delta=0).
 """
 
 from __future__ import annotations
@@ -55,6 +48,13 @@ class ActivityAggregator:
                 self._buckets.clear()
                 self._stations.clear()
                 self._day_start = local_midnight_epoch()
+            # Événement antérieur à minuit (bord de minuit, fuzz CDN, ou replay
+            # Kafka dont la donnée précède le début du jour) : il n'appartient
+            # pas à « aujourd'hui ». On l'ignore pour que `series` (fenêtre
+            # [minuit, now]) et `station_flows` (tout l'accumulé) comptent
+            # EXACTEMENT le même ensemble — sinon le reporting Métier surcompte.
+            if ts < self._day_start:
+                return
             b = self._buckets[ts // BASE_BUCKET_S * BASE_BUCKET_S]
             b[0] += 1
             delta = event.get("bikes_delta", 0)

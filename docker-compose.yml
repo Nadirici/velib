@@ -1,63 +1,41 @@
-# Infra locale du pipeline : Kafka (mode KRaft) + une UI web pour inspecter
-# les topics. Redis viendra s'ajouter ici plus tard (étape state store).
-#
-# Démarrer :  docker compose up -d
-# Arrêter  :  docker compose down          (les données du volume survivent)
-# Tout raser: docker compose down -v       (supprime aussi les messages Kafka)
+# Infra locale : Kafka (KRaft) + Redis + Airflow, avec des UIs d'inspection.
+#   docker compose up -d       démarrer
+#   docker compose down        arrêter (volumes conservés)
+#   docker compose down -v     tout supprimer
 
 services:
   kafka:
-    # Image officielle Apache. Kafka >= 4.0 tourne en mode KRaft uniquement :
-    # plus besoin de ZooKeeper (l'ancien service de coordination externe),
-    # le broker gère lui-même ses métadonnées. Un seul conteneur suffit.
+    # Kafka 4 en mode KRaft (sans ZooKeeper), nœud unique broker + controller.
     image: apache/kafka:4.1.0
     container_name: velib-kafka
     ports:
-      # Seul le port EXTERNAL est exposé à ta machine (ton producer Python).
       - "9092:9092"
     environment:
-      # --- Identité du nœud -------------------------------------------------
-      # En KRaft, chaque nœud a un id et un ou plusieurs rôles. Ici un seul
-      # nœud cumule "broker" (stocke/sert les messages) et "controller"
-      # (gère les métadonnées du cluster). En prod on sépare les deux.
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
 
-      # --- Listeners : LE piège classique de Kafka en Docker ---------------
-      # Un client Kafka se connecte en deux temps :
-      #   1. il contacte l'adresse de bootstrap que tu lui donnes ;
-      #   2. le broker lui répond « voici mon adresse officielle » (advertised)
-      #      et le client se RECONNECTE à cette adresse-là pour tout le reste.
-      # Si l'advertised address n'est pas joignable depuis le client, rien ne
-      # marche alors que le bootstrap, lui, répondait. D'où DEUX listeners :
-      #   - EXTERNAL (localhost:9092) → pour ton Python sur la machine hôte ;
-      #   - INTERNAL (kafka:19092)    → pour les autres conteneurs (kafka-ui,
-      #     et plus tard Spark), qui résolvent "kafka" via le réseau Docker.
+      # Deux listeners : EXTERNAL (localhost:9092) pour l'hôte, INTERNAL
+      # (kafka:19092) pour les autres conteneurs. L'adresse annoncée
+      # (advertised) doit être joignable depuis le client qui s'y reconnecte.
       KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 
-      # --- Réglages "cluster à un seul nœud" -------------------------------
-      # Les topics internes de Kafka (offsets des consumers, transactions)
-      # veulent 3 réplicas par défaut ; impossible avec 1 broker.
+      # Réplication 1 sur les topics internes (nœud unique).
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
-      # Désactivé exprès : on veut créer le topic NOUS-MÊMES (ensure_topic)
-      # pour choisir le nombre de partitions et la rétention, au lieu de
-      # laisser Kafka créer un topic par défaut au premier message envoyé.
+      # Topic créé explicitement par ensure_topic (partitions, rétention).
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
-      # Sans volume, chaque `docker compose down` effacerait tous les messages.
       - kafka-data:/var/lib/kafka/data
 
   kafka-ui:
-    # UI web pour voir les topics, les partitions, les messages, le lag des
-    # consumers. Très utile pour apprendre : http://localhost:8080
+    # Inspection des topics / partitions / lag : http://localhost:8080
     image: ghcr.io/kafbat/kafka-ui:latest
     container_name: velib-kafka-ui
     depends_on:
@@ -66,30 +44,20 @@ services:
       - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: velib-local
-      # kafka-ui est un conteneur → il passe par le listener INTERNAL.
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
 
   redis:
-    # Redis : store clé-valeur EN MÉMOIRE (lectures/écritures < 1 ms). Son rôle
-    # ici : tenir la « photo » de l'état courant des stations, que le dashboard
-    # lira directement — par opposition à Kafka qui tient le « film » (le flux
-    # des changements). L'image alpine est minuscule (~30 Mo).
+    # Vue matérialisée de l'état courant des stations (persistance AOF).
     image: redis:7-alpine
     container_name: velib-redis
     ports:
-      # Exposé à ta machine pour ton consumer Python et redis-cli.
       - "6379:6379"
-    # AOF (append-only file) : Redis journalise chaque écriture sur disque et
-    # peut donc restaurer son état au redémarrage. Sans ça, tout serait perdu
-    # à chaque restart — acceptable ici (on peut reconstruire depuis Kafka !)
-    # mais autant apprendre l'option de persistance standard.
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
 
   redisinsight:
-    # UI officielle de Redis : browser de clés, éditeur, profiler de commandes.
-    # L'équivalent de kafka-ui, mais pour la photo : http://localhost:5540
+    # UI Redis : http://localhost:5540
     image: redis/redisinsight:latest
     container_name: velib-redisinsight
     depends_on:
@@ -97,46 +65,36 @@ services:
     ports:
       - "5540:5540"
     volumes:
-      # Mémorise la connexion configurée dans l'UI entre deux redémarrages.
       - redisinsight-data:/data
 
   airflow:
-    # Orchestrateur des jobs batch (archivage événements + météo, plus tard
-    # le chargement PostgreSQL). Mode « standalone » : scheduler, api-server
-    # et dag-processor dans UN conteneur avec une base SQLite — parfait en
-    # local ; en prod on séparerait tout (executor distribué + Postgres).
+    # Orchestrateur des jobs batch (mode standalone, SQLite) : http://localhost:8081
     image: apache/airflow:3.1.0
     container_name: velib-airflow
     depends_on:
       - kafka
     command: airflow standalone
     ports:
-      - "8081:8080"   # UI : http://localhost:8081 (8080 est pris par kafka-ui)
+      - "8081:8080"
     environment:
-      # Fuseau du système DANS le conteneur : l'archiveur et le job météo
-      # découpent les journées (day_start) et calculent la colonne `hour` en
-      # heure locale — Paris, pour coller aux données Vélib et au dashboard.
+      # Fuseau du conteneur : l'archiveur découpe les journées et calcule la
+      # colonne `hour` en heure de Paris.
       TZ: Europe/Paris
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/velib/dags
       AIRFLOW__CORE__DEFAULT_TIMEZONE: Europe/Paris
-      # Auth locale sans login (à ne JAMAIS faire en prod).
+      # Auth locale sans login — usage local uniquement.
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
-      # Nos dépendances, installées au démarrage du conteneur : le raccourci
-      # dev officiel de l'image. En prod : une image custom (FROM airflow +
-      # pip install), jamais ce raccourci.
+      # Dépendances installées au démarrage (raccourci dev ; image custom en prod).
       _PIP_ADDITIONAL_REQUIREMENTS: "confluent-kafka duckdb httpx truststore"
-      # Le code tourne DANS le réseau Docker : Kafka via le listener INTERNAL.
       VELIB_BOOTSTRAP_SERVERS: kafka:19092
       PYTHONPATH: /opt/velib/src
     volumes:
-      # Tout le repo : le code (via PYTHONPATH) et data/ où atterrissent les
-      # Parquet — écrits par Airflow, lus par le dashboard côté hôte.
+      # Repo monté : code (PYTHONPATH) + data/ où atterrissent les Parquet.
       - .:/opt/velib
       - airflow-data:/opt/airflow
 
-  # TODO (étape suivante de la roadmap) : PostgreSQL, cible du chargement
-  # analytique orchestré par Airflow.
+  # PostgreSQL (chargement analytique) — prochaine étape de la roadmap :
   # postgres:
   #   image: postgres:17-alpine
   #   ports: ["5432:5432"]

@@ -65,8 +65,9 @@ Servi par FastAPI, poussé en temps réel via **SSE** (le navigateur ne fait auc
 - **Carte Leaflet** des ~1 500 stations — couleur = remplissage, taille ∝ capacité, animation « radar » à chaque changement, badge « EN DIRECT » reflétant l'état réel du flux (passe à « FLUX INTERROMPU » si la donnée vieillit).
 - **Deux modes** : « trouver un vélo » (couleur = vélos dispo) / « rendre un vélo » (couleur = bornettes libres).
 - **Bandeau de stats** : vélos disponibles, bornettes libres, stations vides/pleines/fermées.
-- **Panneau BI** (bouton 📊 Activité), quatre onglets :
+- **Panneau BI** (bouton 📊 Activité), cinq onglets :
   - **Indicateurs** — KPIs instantanés (taux de remplissage, part électrique, stations sous tension) et du jour (rotations, flux net, rythme/min avec sparkline, heure de pointe), en direct via SSE ;
+  - **Arrondissements** — carte choroplèthe vectorielle (SVG natif) de l'activité intra-muros, calcul 100 % local en temps réel des classements de stations (plus actives, en tension) globalement ou par arrondissement cliqué ;
   - **Métier** — vue exploitant : demande & revenus estimés, priorités de rééquilibrage (stations en défaut triées par la demande qu'elles portent), puits/sources (flux net par station) ;
   - **Aujourd'hui (direct)** — courbe vélos pris/rendus, granularité ajustable 1 min → 1 h, reconstruite depuis Kafka au démarrage puis alimentée en continu ;
   - **Historique (archives)** — requêtes DuckDB sur les Parquet : volumes par jour, profil horaire moyen (signature jour/nuit).
@@ -103,8 +104,7 @@ velib/
 ├── dags/
 │   └── velib_daily.py           # DAG Airflow : archivage événements + météo (nuit)
 ├── docs/
-│   ├── DEPLOY-GCP.md            # Guide de déploiement GCP pas à pas
-│   └── ROADMAP-IA.md           # Pistes d'intégration IA/ML
+│   └── DEPLOY-GCP.md            # Guide de déploiement GCP pas à pas
 ├── data/                        # Données générées (Parquet, hors git) : events/ et weather/
 │   └── {events,weather}/date=YYYY-MM-DD/*.parquet
 ├── src/velib/
@@ -180,7 +180,7 @@ velib/
   les composants VM se mettent à jour à la main (`git pull` + `docker compose up -d`).
 - Airflow tourne en mode `standalone` (base SQLite) — suffisant pour le batch quotidien, à séparer
   (executor distribué + Postgres) pour un vrai environnement de production.
-- À venir (voir [docs/ROADMAP-IA.md](docs/ROADMAP-IA.md)) : chargement PostgreSQL analytique,
+- À venir : chargement PostgreSQL analytique,
   croisement météo (les horodatages sont volontairement restés en epoch UTC pour ça), prédiction de
   disponibilité par station, agent conversationnel LLM sur les données.
 

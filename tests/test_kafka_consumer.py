@@ -82,7 +82,7 @@ class TestRun:
         kc.run(handler=lambda e: None)
 
         assert consumer.commits == []
-        assert "Consumer error" in capsys.readouterr().out
+        assert "Erreur Kafka" in capsys.readouterr().out
 
     def test_poison_ecarte_et_committe(self, monkeypatch, make_state, capsys):
         """LE test de non-régression de l'incident : un message inparsable ne

@@ -7,9 +7,8 @@ On distingue :
   joignant le statique et le dynamique. C'est ce que le producer compare d'un
   relevé à l'autre pour détecter les changements.
 
-Tous les horodatages sont des epoch UTC (secondes), tels que fournis par l'API.
-On ne les convertit jamais en heure locale : c'est indispensable pour le ML
-plus tard (croisement météo à l'heure exacte, gestion des changements d'heure).
+Tous les horodatages sont des epoch UTC (secondes), jamais convertis en heure
+locale — ce qui permet de croiser les données par temps d'événement.
 """
 
 from __future__ import annotations
@@ -55,12 +54,9 @@ class StationState:
 
     @property
     def tracked(self) -> tuple:
-        """Les champs qui définissent un « changement ».
-
-        Le producer compare cette signature d'un relevé au suivant : si elle
-        bouge, un événement est émis. On y met les compteurs ET les flags de
-        statut (choix de conception : on veut capter les mises hors-service).
-        On exclut volontairement les horodatages, qui bougent à chaque relevé.
+        """Signature comparée d'un relevé au suivant : un événement est émis dès
+        qu'elle change. Inclut compteurs et flags de statut (pour capter les
+        mises hors-service), exclut les horodatages (qui bougent à chaque relevé).
         """
         return (
             self.mechanical,
@@ -77,10 +73,9 @@ class StationState:
 class StationChangeEvent:
     """Message publié dans le topic `velib.station.changes`.
 
-    C'est un `StationState` auto-suffisant (il embarque le contexte fixe pour
-    que les consumers en aval n'aient rien à rejoindre) augmenté du `bikes_delta` :
-    la variation du nombre de vélos depuis le relevé précédent. Ce delta sert au
-    calcul du flux net par fenêtre glissante (étape 5).
+    `StationState` auto-suffisant (il embarque le contexte fixe, les consumers
+    n'ont rien à rejoindre) augmenté de `bikes_delta` : la variation de vélos
+    depuis le relevé précédent.
     """
 
     station_id: int
@@ -131,11 +126,9 @@ class StationChangeEvent:
 
 
 def parse_bike_types(raw: list[dict] | None) -> tuple[int, int]:
-    """Aplatit le champ piégeux `num_bikes_available_types`.
-
-    L'API le renvoie sous la forme d'une liste d'objets à une seule clé :
-        [{"mechanical": 0}, {"ebike": 2}]
-    On la réduit à un couple (mechanical, ebike).
+    """Aplatit `num_bikes_available_types` — renvoyé par l'API sous forme de
+    liste d'objets à une clé, [{"mechanical": 0}, {"ebike": 2}] — en un couple
+    (mechanical, ebike).
     """
     counts: dict[str, int] = {}
     for item in raw or []:
