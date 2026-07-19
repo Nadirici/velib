@@ -119,6 +119,27 @@ class TestBusiness:
         assert b["to_move"] == 6
 
 
+class TestArrondissements:
+    def test_agregation_par_arrondissement(self, dash, make_state):
+        # 16043 et 16107 → arrondissement 16 ; 21023 → banlieue (ignorée)
+        seed_station(dash, make_state, station_id=1, station_code="16043",
+                     lat=48.86, lon=2.28, bikes_available=3, capacity=30)
+        act(dash, station_id=1, delta=-2)
+        seed_station(dash, make_state, station_id=2, station_code="16107",
+                     lat=48.88, lon=2.26, bikes_available=0, capacity=20)
+        seed_station(dash, make_state, station_id=3, station_code="21023")
+
+        r = TestClient(dash.app).get("/api/arrondissements").json()
+        [a] = r["arrondissements"]           # seul l'arrondissement 16
+        assert a["arr"] == 16
+        assert a["stations"] == 2
+        assert a["bikes"] == 3
+        assert a["taken"] == 2
+        assert a["empty"] == 1               # station 2 vide et ouverte
+        assert a["lat"] == pytest.approx(48.87)   # centroïde
+        assert a["lon"] == pytest.approx(2.27)
+
+
 class TestHistory:
     def test_sans_archives(self, dash, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

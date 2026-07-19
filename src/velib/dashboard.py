@@ -166,10 +166,17 @@ def _snapshot_stations() -> list[dict]:
 def stations() -> dict:
     """Snapshot complet : la photo Redis + horodatages pour la fraîcheur."""
     last_ts = _r.get("velib:last_ts")
+    flows = _activity.station_flows()
+    snapshot = _snapshot_stations()
+    for s in snapshot:
+        t, r = flows.get(s["station_id"], (0, 0))
+        s["taken"] = t
+        s["returned"] = r
+        
     return {
         "now": int(time.time()),
         "last_ts": int(last_ts) if last_ts else None,
-        "stations": _snapshot_stations(),
+        "stations": snapshot,
     }
 
 
@@ -236,6 +243,49 @@ def business() -> dict:
         "sinks": sinks,
         "sources": sources,
     }
+
+
+@app.get("/api/arrondissements")
+def arrondissements() -> dict:
+    """Agrégats par arrondissement parisien (1–20) : état courant (Redis),
+    activité du jour (flux par station) et centroïde (moyenne des stations).
+
+    L'arrondissement est dérivé du préfixe du station_code (ex. 16107 → 16) ;
+    les codes ≥ 21000 (banlieue) sont ignorés.
+    """
+    flows = _activity.station_flows()
+    acc: dict[int, dict] = {}
+    for s in _snapshot_stations():
+        try:
+            arr = int(s["station_code"]) // 1000
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= arr <= 20:
+            continue
+        a = acc.setdefault(arr, {
+            "arr": arr, "stations": 0, "bikes": 0, "ebike": 0, "capacity": 0,
+            "docks": 0, "empty": 0, "full": 0, "taken": 0, "returned": 0,
+            "lat": 0.0, "lon": 0.0,
+        })
+        a["stations"] += 1
+        a["bikes"] += s["bikes_available"]
+        a["ebike"] += s["ebike"]
+        a["capacity"] += s["capacity"]
+        a["docks"] += s["docks_available"]
+        a["lat"] += s["lat"]
+        a["lon"] += s["lon"]
+        if s["is_installed"] and s["is_renting"] and s["bikes_available"] == 0:
+            a["empty"] += 1
+        if s["is_installed"] and s["is_returning"] and s["docks_available"] == 0:
+            a["full"] += 1
+        taken, returned = flows.get(s["station_id"], (0, 0))
+        a["taken"] += taken
+        a["returned"] += returned
+
+    for a in acc.values():
+        a["lat"] /= a["stations"]
+        a["lon"] /= a["stations"]
+    return {"arrondissements": sorted(acc.values(), key=lambda x: x["arr"])}
 
 
 @app.get("/api/stream")
@@ -334,6 +384,14 @@ def history_profile() -> dict:
         GROUP BY hour ORDER BY hour
     """).fetchall()
     return {"hours": [{"hour": h, "taken": t, "returned": r} for h, t, r in rows]}
+
+
+@app.get("/arrondissements.geojson")
+def arr_geojson() -> FileResponse:
+    """Frontières des arrondissements parisiens (open data Ville de Paris,
+    simplifié), pour la choroplèthe de l'onglet Arrondissements."""
+    return FileResponse(_STATIC / "arrondissements.geojson",
+                        media_type="application/geo+json")
 
 
 @app.get("/")
