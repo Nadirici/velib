@@ -108,6 +108,10 @@ uv run python -m velib.archiver
 # Archiver une date précise
 uv run python -m velib.archiver 2026-07-19
 
+# Ingérer la météo horaire (Open-Meteo → Parquet, pour le futur ML)
+uv run python -m velib.weather                        # hier
+uv run python -m velib.weather 2026-07-18 2026-07-25  # backfill d'une plage
+
 # Lancer les tests
 uv run pytest
 
