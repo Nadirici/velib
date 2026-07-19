@@ -1021,7 +1021,12 @@
     const CLOSED = "#898781";
 
     /* ========== Carte Leaflet ========== */
-    const map = L.map("map", { preferCanvas: true }).setView([48.859, 2.347], 12);
+    // Renderer canvas partagé, padding large : le canvas déborde du viewport,
+    // donc un petit pan ne provoque pas de redraw. Tous les marqueurs y sont
+    // dessinés d'un coup (au lieu d'un layer SVG par station).
+    const canvasRenderer = L.canvas({ padding: 0.5 });
+    const map = L.map("map", { preferCanvas: true, renderer: canvasRenderer })
+      .setView([48.859, 2.347], 12);
     const dark = matchMedia("(prefers-color-scheme: dark)");
     let tiles = null;
 
@@ -1125,18 +1130,41 @@
       })(t0);
     }
     map.on("movestart zoomstart", function () { mapMoving = true; });
-    map.on("moveend zoomend", function () { mapMoving = false; });
+    map.on("moveend zoomend", function () {
+      mapMoving = false;
+      if (!pendingRestyle.size) return;
+      for (const id of pendingRestyle) {
+        const m = markers.get(id), s = stations.get(id);
+        if (m && s) restyleMarker(m, s, id);
+      }
+      pendingRestyle.clear();
+    });
+
+    // File des marqueurs à re-styler quand on relâchera la carte : pendant un
+    // pan/zoom on n'appelle JAMAIS setStyle (donc aucun redraw du canvas au
+    // milieu du geste) ; on rejoue tout à moveend.
+    const pendingRestyle = new Set();
+
+    function restyleMarker(m, s, id) {
+      const c = color(s);
+      if (c !== m._fill) {          // redraw uniquement si la COULEUR a changé
+        m.setStyle(style(s));
+        m._fill = c;
+      }
+      if (m.isPopupOpen()) m.setPopupContent(popupHtml(id));
+    }
 
     function upsertMarker(id, s) {
       let m = markers.get(id);
       if (!m) {
         m = L.circleMarker([s.lat, s.lon], style(s)).addTo(map);
         m.bindPopup(() => popupHtml(id), { maxWidth: 280 });
+        m._fill = color(s);
         markers.set(id, m);
-      } else {
-        m.setStyle(style(s));
-        if (m.isPopupOpen()) m.setPopupContent(popupHtml(id));
+        return m;
       }
+      if (mapMoving) { pendingRestyle.add(id); return m; }
+      restyleMarker(m, s, id);
       return m;
     }
 
